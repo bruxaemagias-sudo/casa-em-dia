@@ -55,7 +55,7 @@ function loadJsQR() {
   return new Promise((resolve) => {
     if (window.jsQR) return resolve(true);
     const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js";
+   s.src="htps://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js";
     s.onload = () => resolve(!!window.jsQR);
     s.onerror = () => resolve(false);
     document.head.appendChild(s);
