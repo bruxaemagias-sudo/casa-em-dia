@@ -51,8 +51,10 @@ const STATUS_META = {
 };
 
 /* --------------------- leitura real de QR Code (NFC-e) ------------------- */
-// Carrega a lib jsQR do CDN (decodificação de QR Code 100% no navegador, sem servidor)
-function loadJsQR() { return Promise.resolve(true); }
+// jsQR agora vem embutido no projeto (import no topo do arquivo) — não depende mais de internet externa
+function loadJsQR() {
+  return Promise.resolve(true);
+}
 
 // Lê o QR Code de um arquivo de imagem e devolve o texto decodificado (ou null)
 function decodeQRFromImage(file) {
@@ -367,6 +369,18 @@ const GlobalStyle = () => (
     .parsed-item .check.on { background: var(--sage); border-color: var(--sage); color: #fff; }
 
     .scanning-overlay { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 10px; color: var(--primary); }
+
+    .camera-overlay { position: fixed; inset: 0; background: #000; z-index: 300; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .camera-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .camera-frame { position: relative; width: min(62vw, 260px); height: min(62vw, 260px); z-index: 2; }
+    .camera-frame .corner { position: absolute; width: 34px; height: 34px; }
+    .camera-frame .tl { top: 0; left: 0; border-top: 4px solid #4ADE80; border-left: 4px solid #4ADE80; border-radius: 6px 0 0 0; }
+    .camera-frame .tr { top: 0; right: 0; border-top: 4px solid #4ADE80; border-right: 4px solid #4ADE80; border-radius: 0 6px 0 0; }
+    .camera-frame .bl { bottom: 0; left: 0; border-bottom: 4px solid #4ADE80; border-left: 4px solid #4ADE80; border-radius: 0 0 0 6px; }
+    .camera-frame .br { bottom: 0; right: 0; border-bottom: 4px solid #4ADE80; border-right: 4px solid #4ADE80; border-radius: 0 0 6px 0; }
+    .camera-hint { position: absolute; bottom: 64px; left: 16px; right: 16px; text-align: center; color: #fff; font-weight: 700; font-size: 14px; z-index: 2; text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
+    .camera-close { position: absolute; top: 18px; right: 18px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5); border: none; color: #fff; display: flex; align-items: center; justify-content: center; z-index: 3; cursor: pointer; }
+    .camera-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center; color: #fff; background: rgba(0,0,0,0.9); z-index: 4; gap: 10px; font-size: 13.5px; }
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -428,6 +442,7 @@ export default function LarEmDia() {
   const [parsedModal, setParsedModal] = useState(null); // { target, items }
   const [qrFallback, setQrFallback] = useState(null); // { url, chave, target }
   const [qrReady, setQrReady] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState(null); // 'grocery' | 'pharmacy' | 'receipt' | null
   const fileInputRef = useRef(null);
   const pendingScan = useRef(null); // 'grocery' | 'pharmacy' | 'receipt'
 
@@ -471,12 +486,11 @@ export default function LarEmDia() {
   }
 
   function openScanner(target, useCamera) {
-    if (!qrReady) { showToast("Leitor de QR Code ainda carregando, tente de novo em instantes"); loadJsQR().then(setQrReady); return; }
+    if (useCamera) { setCameraTarget(target); return; }
     pendingScan.current = target;
     const input = fileInputRef.current;
     if (!input) return;
-    if (useCamera) input.setAttribute("capture", "environment");
-    else input.removeAttribute("capture");
+    input.removeAttribute("capture");
     input.click();
   }
 
@@ -500,7 +514,11 @@ export default function LarEmDia() {
       showToast("Nenhum QR Code encontrado na imagem");
       return;
     }
+    await processDecodedText(text, target);
+  }
 
+  async function processDecodedText(text, target) {
+    setScanningFor(target);
     let url;
     try { url = new URL(text).href; } catch { url = null; }
     if (!url) {
@@ -690,6 +708,14 @@ export default function LarEmDia() {
           draft={expenseDraft}
           onClose={() => { setShowAddExpense(false); setExpenseDraft(null); }}
           onSave={saveExpense}
+        />
+      )}
+
+      {cameraTarget && (
+        <CameraScannerModal
+          target={cameraTarget}
+          onClose={() => setCameraTarget(null)}
+          onDetect={(text) => { setCameraTarget(null); processDecodedText(text, cameraTarget); }}
         />
       )}
 
@@ -991,6 +1017,84 @@ function ExpenseModal({ draft, onClose, onSave }) {
       </div>
       <button className="btn-primary" disabled={!local || !value} onClick={() => onSave({ date, local, value })}>Salvar gasto</button>
     </ModalShell>
+  );
+}
+
+function CameraScannerModal({ target, onClose, onDetect }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function tick() {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (video && canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+        if (code && code.data) {
+          onDetect(code.data);
+          return;
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    async function start() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+        });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        tick();
+      } catch {
+        setError("Não foi possível acessar a câmera. Verifique se você autorizou o uso da câmera para este site nas configurações do navegador.");
+      }
+    }
+    start();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    };
+  }, [onDetect]);
+
+  return (
+    <div className="camera-overlay">
+      <video ref={videoRef} playsInline muted className="camera-video" />
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+      {!error && (
+        <>
+          <div className="camera-frame">
+            <span className="corner tl" /><span className="corner tr" />
+            <span className="corner bl" /><span className="corner br" />
+          </div>
+          <div className="camera-hint">Aponte a câmera para o QR Code da nota</div>
+        </>
+      )}
+      <button className="camera-close" onClick={onClose}><X size={22} /></button>
+      {error && (
+        <div className="camera-error">
+          <AlertTriangle size={26} />
+          <div>{error}</div>
+          <button className="btn-primary" style={{ marginTop: 10, maxWidth: 220 }} onClick={onClose}>Fechar e tentar de novo</button>
+        </div>
+      )}
+    </div>
   );
 }
 
