@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import jsQR from "jsqr";
 import {
   Home, Phone, ShoppingBasket, Pill, Wallet, Plus, Minus, Trash2,
   Camera, UploadCloud, MessageCircle, AlertTriangle, X, ChevronDown,
@@ -51,16 +52,7 @@ const STATUS_META = {
 
 /* --------------------- leitura real de QR Code (NFC-e) ------------------- */
 // Carrega a lib jsQR do CDN (decodificação de QR Code 100% no navegador, sem servidor)
-function loadJsQR() {
-  return new Promise((resolve) => {
-    if (window.jsQR) return resolve(true);
-    const s = document.createElement("script");
-   s.src="htps://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js";
-    s.onload = () => resolve(!!window.jsQR);
-    s.onerror = () => resolve(false);
-    document.head.appendChild(s);
-  });
-}
+function loadJsQR() { return Promise.resolve(true); }
 
 // Lê o QR Code de um arquivo de imagem e devolve o texto decodificado (ou null)
 function decodeQRFromImage(file) {
@@ -77,7 +69,7 @@ function decodeQRFromImage(file) {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = window.jsQR ? window.jsQR(imageData.data, imageData.width, imageData.height) : null;
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
         resolve(code ? code.data : null);
       };
       img.src = ev.target.result;
