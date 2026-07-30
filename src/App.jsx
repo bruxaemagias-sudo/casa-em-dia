@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import jsQR from "jsqr";
+import { createWorker } from "tesseract.js";
 import {
   Home, Phone, ShoppingBasket, Pill, Wallet, Plus, Minus, Trash2,
   Camera, UploadCloud, MessageCircle, AlertTriangle, X, ChevronDown,
@@ -50,62 +50,47 @@ const STATUS_META = {
   ok:       { label: "Em dia",          color: "var(--sage)",   bg: "var(--sage-bg)"   },
 };
 
-/* --------------------- leitura real de QR Code (NFC-e) ------------------- */
-// jsQR agora vem embutido no projeto (import no topo do arquivo) — não depende mais de internet externa
-function loadJsQR() {
-  return Promise.resolve(true);
+/* --------------------- leitura automática por foto (OCR) ----------------- */
+// Extrai o texto de uma foto da nota fiscal usando OCR (Tesseract), 100% no navegador.
+// Não depende de nenhum site externo — por isso não é bloqueado pela Sefaz.
+let ocrWorkerPromise = null;
+function getOcrWorker() {
+  if (!ocrWorkerPromise) ocrWorkerPromise = createWorker("por");
+  return ocrWorkerPromise;
+}
+async function extractTextFromImage(file) {
+  const worker = await getOcrWorker();
+  const { data } = await worker.recognize(file);
+  return data.text || "";
 }
 
-// Lê o QR Code de um arquivo de imagem e devolve o texto decodificado (ou null)
-function decodeQRFromImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Não foi possível abrir a imagem"));
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Imagem inválida"));
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        resolve(code ? code.data : null);
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
+// Interpreta o texto bruto do OCR e tenta identificar itens, valor total, data e loja.
+// É uma leitura "melhor esforço": sempre mostramos o resultado pra pessoa conferir/editar antes de salvar.
+function parseReceiptText(rawText) {
+  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-// Tenta abrir a página oficial da nota (Sefaz) e extrair itens/valor.
-// Muitos portais estaduais bloqueiam esse acesso automático por segurança (CORS) —
-// nesse caso a função lança erro e o app oferece o link oficial + preenchimento manual.
-async function tryFetchNfceData(url) {
-  const res = await fetch(url, { mode: "cors" });
-  if (!res.ok) throw new Error("Não foi possível abrir a nota");
-  const html = await res.text();
-  const doc = new DOMParser().parseFromString(html, "text/html");
+  const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const date = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
 
-  const local = doc.querySelector(".txtTopo, .txtCenter")?.textContent?.trim() || null;
+  let total = null;
+  const totalMatches = [...rawText.matchAll(/TOTAL[^\d\n]{0,15}(\d{1,3}(?:\.\d{3})*,\d{2})/gi)];
+  if (totalMatches.length) {
+    total = parseFloat(totalMatches[totalMatches.length - 1][1].replace(/\./g, "").replace(",", "."));
+  }
+
+  const local = lines.find((l) => l.length > 3 && !/^\d+$/.test(l) && !/^\d{2}\/\d{2}\/\d{4}/.test(l)) || null;
 
   const items = [];
-  doc.querySelectorAll("#tabResult tr").forEach((row) => {
-    const desc = row.querySelector(".txtTit")?.textContent?.trim();
-    const qtdTxt = row.querySelector(".Rqtd")?.textContent?.replace("Qtde.:", "").trim();
-    if (desc) {
-      const qtd = parseFloat((qtdTxt || "1").replace(",", ".")) || 1;
-      items.push({ name: desc, qty: Math.max(1, Math.round(qtd)), unit: "un", validade: randFutureDate(15, 220) });
+  for (const line of lines) {
+    const m = line.match(/^(.{3,40}?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})$/);
+    if (m) {
+      const desc = m[1].replace(/^\d+\s*(UN|KG|UNID|PC|CX)?\s*/i, "").trim();
+      if (desc.length > 2 && !/total|troco|dinheiro|cart[aã]o|desconto|subtotal/i.test(desc)) {
+        items.push({ name: desc, qty: 1, unit: "un", validade: randFutureDate(15, 220) });
+      }
     }
-  });
-
-  const totalTxt = doc.querySelector("#linhaTotal .txtMax, #valorTotal")?.textContent
-    ?.replace(/[^\d,]/g, "")?.replace(",", ".");
-  const total = totalTxt ? parseFloat(totalTxt) : null;
-
-  return { local, items, total };
+  }
+  return { date, total, local, items };
 }
 
 function onlyDigits(s) { return (s || "").replace(/\D/g, ""); }
@@ -369,18 +354,7 @@ const GlobalStyle = () => (
     .parsed-item .check.on { background: var(--sage); border-color: var(--sage); color: #fff; }
 
     .scanning-overlay { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 10px; color: var(--primary); }
-
-    .camera-overlay { position: fixed; inset: 0; background: #000; z-index: 300; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-    .camera-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    .camera-frame { position: relative; width: min(62vw, 260px); height: min(62vw, 260px); z-index: 2; }
-    .camera-frame .corner { position: absolute; width: 34px; height: 34px; }
-    .camera-frame .tl { top: 0; left: 0; border-top: 4px solid #4ADE80; border-left: 4px solid #4ADE80; border-radius: 6px 0 0 0; }
-    .camera-frame .tr { top: 0; right: 0; border-top: 4px solid #4ADE80; border-right: 4px solid #4ADE80; border-radius: 0 6px 0 0; }
-    .camera-frame .bl { bottom: 0; left: 0; border-bottom: 4px solid #4ADE80; border-left: 4px solid #4ADE80; border-radius: 0 0 0 6px; }
-    .camera-frame .br { bottom: 0; right: 0; border-bottom: 4px solid #4ADE80; border-right: 4px solid #4ADE80; border-radius: 0 0 6px 0; }
-    .camera-hint { position: absolute; bottom: 64px; left: 16px; right: 16px; text-align: center; color: #fff; font-weight: 700; font-size: 14px; z-index: 2; text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
-    .camera-close { position: absolute; top: 18px; right: 18px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.5); border: none; color: #fff; display: flex; align-items: center; justify-content: center; z-index: 3; cursor: pointer; }
-    .camera-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; text-align: center; color: #fff; background: rgba(0,0,0,0.9); z-index: 4; gap: 10px; font-size: 13.5px; }
+    .scan-btn-wide { flex: 1; }
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -440,13 +414,8 @@ export default function LarEmDia() {
   const [expenseDraft, setExpenseDraft] = useState(null);
   const [scanningFor, setScanningFor] = useState(null);
   const [parsedModal, setParsedModal] = useState(null); // { target, items }
-  const [qrFallback, setQrFallback] = useState(null); // { url, chave, target }
-  const [qrReady, setQrReady] = useState(false);
-  const [cameraTarget, setCameraTarget] = useState(null); // 'grocery' | 'pharmacy' | 'receipt' | null
   const fileInputRef = useRef(null);
   const pendingScan = useRef(null); // 'grocery' | 'pharmacy' | 'receipt'
-
-  useEffect(() => { loadJsQR().then(setQrReady); }, []);
 
   useEffect(() => {
     (async () => {
@@ -485,12 +454,10 @@ export default function LarEmDia() {
     listSetter((list) => [{ id: uid(), ...item }, ...list]);
   }
 
-  function openScanner(target, useCamera) {
-    if (useCamera) { setCameraTarget(target); return; }
+  function openScanner(target) {
     pendingScan.current = target;
     const input = fileInputRef.current;
     if (!input) return;
-    input.removeAttribute("capture");
     input.click();
   }
 
@@ -503,46 +470,28 @@ export default function LarEmDia() {
     setScanningFor(target);
     let text;
     try {
-      text = await decodeQRFromImage(file);
+      text = await extractTextFromImage(file);
     } catch {
       setScanningFor(null);
-      showToast("Não foi possível ler essa imagem");
+      showToast("Não foi possível ler o texto dessa foto. Tente uma imagem mais nítida.");
       return;
     }
-    if (!text) {
-      setScanningFor(null);
-      showToast("Nenhum QR Code encontrado na imagem");
-      return;
-    }
-    await processDecodedText(text, target);
-  }
+    setScanningFor(null);
 
-  async function processDecodedText(text, target) {
-    setScanningFor(target);
-    let url;
-    try { url = new URL(text).href; } catch { url = null; }
-    if (!url) {
-      setScanningFor(null);
-      showToast("Esse QR Code não parece ser de uma nota fiscal (NFC-e)");
-      return;
-    }
-    const chave = (text.match(/\d{44}/) || [])[0] || null;
-
-    try {
-      const data = await tryFetchNfceData(url);
-      setScanningFor(null);
-      if (target === "receipt") {
-        setExpenseDraft({ date: todayISO(), local: data.local || "Estabelecimento", value: data.total ? data.total.toFixed(2) : "" });
-        setShowAddExpense(true);
-      } else if (data.items.length) {
-        setParsedModal({ target, items: data.items.map((i) => ({ ...i, selected: true })) });
-      } else {
-        setQrFallback({ url, chave, target });
-      }
-    } catch {
-      // Comum: o portal da Sefaz bloqueia leitura automática pelo navegador (CORS).
-      setScanningFor(null);
-      setQrFallback({ url, chave, target });
+    const data = parseReceiptText(text);
+    if (target === "receipt") {
+      setExpenseDraft({
+        date: data.date || todayISO(),
+        local: data.local || "",
+        value: data.total ? data.total.toFixed(2) : "",
+      });
+      setShowAddExpense(true);
+      if (!data.total) showToast("Não consegui identificar o valor sozinho — confira e complete");
+    } else if (data.items.length) {
+      setParsedModal({ target, items: data.items.map((i) => ({ ...i, selected: true })) });
+    } else {
+      showToast("Não consegui identificar itens na foto — tente uma imagem mais nítida ou adicione manualmente");
+      setShowAddItem(target);
     }
   }
 
@@ -552,7 +501,7 @@ export default function LarEmDia() {
     const setter = target === "grocery" ? setGroceries : setPharmacy;
     setter((list) => [...toAdd.map((i) => ({ id: uid(), ...i })), ...list]);
     setParsedModal(null);
-    showToast(`Nota processada — ${toAdd.length} ${toAdd.length === 1 ? "item adicionado" : "itens adicionados"}`);
+    showToast(`Foto processada — ${toAdd.length} ${toAdd.length === 1 ? "item adicionado" : "itens adicionados"}. Confira as quantidades!`);
   }
 
   function saveExpense(draft) {
@@ -633,8 +582,7 @@ export default function LarEmDia() {
               onDec={(id) => adjustQty(setGroceries, id, -1)}
               onRemove={(id) => removeItem(setGroceries, id)}
               onAdd={() => setShowAddItem("grocery")}
-              onScanCamera={() => openScanner("grocery", true)}
-              onScanUpload={() => openScanner("grocery", false)}
+              onScan={() => openScanner("grocery")}
             />
           )}
           {tab === "farmacia" && (
@@ -646,8 +594,7 @@ export default function LarEmDia() {
               onDec={(id) => adjustQty(setPharmacy, id, -1)}
               onRemove={(id) => removeItem(setPharmacy, id)}
               onAdd={() => setShowAddItem("pharmacy")}
-              onScanCamera={() => openScanner("pharmacy", true)}
-              onScanUpload={() => openScanner("pharmacy", false)}
+              onScan={() => openScanner("pharmacy")}
             />
           )}
           {tab === "gastos" && (
@@ -659,8 +606,7 @@ export default function LarEmDia() {
               monthExpenses={monthExpenses}
               monthTotal={monthTotal}
               onAdd={() => { setExpenseDraft({ date: todayISO(), local: "", value: "" }); setShowAddExpense(true); }}
-              onScanCamera={() => openScanner("receipt", true)}
-              onScanUpload={() => openScanner("receipt", false)}
+              onScan={() => openScanner("receipt")}
               onRemove={(id) => setExpenses((l) => l.filter((e) => e.id !== id))}
             />
           )}
@@ -711,47 +657,18 @@ export default function LarEmDia() {
         />
       )}
 
-      {cameraTarget && (
-        <CameraScannerModal
-          target={cameraTarget}
-          onClose={() => setCameraTarget(null)}
-          onDetect={(text) => { setCameraTarget(null); processDecodedText(text, cameraTarget); }}
-        />
-      )}
-
       {scanningFor && (
         <div className="modal-overlay">
           <div className="modal-sheet">
             <div className="scanning-overlay">
               <Loader2 className="spin" size={30} />
-              <div style={{ fontWeight: 700 }}>Lendo o QR Code…</div>
+              <div style={{ fontWeight: 700 }}>Lendo a foto da nota…</div>
               <div style={{ fontSize: 12.5, color: "var(--ink-soft)", textAlign: "center" }}>
-                Decodificando a imagem e consultando a nota fiscal.
+                Reconhecendo o texto da imagem (OCR). Pode levar alguns segundos.
               </div>
             </div>
           </div>
         </div>
-      )}
-
-      {qrFallback && (
-        <ModalShell title="QR Code lido" onClose={() => setQrFallback(null)}>
-          <div style={{ fontSize: 13.5, color: "var(--ink-soft)", marginBottom: 14 }}>
-            O código foi lido corretamente{qrFallback.chave ? ` (chave ${qrFallback.chave.slice(0, 4)}…${qrFallback.chave.slice(-4)})` : ""},
-            mas o site oficial da nota bloqueia a leitura automática pelo navegador. Abra a nota para conferir e complete o registro em seguida.
-          </div>
-          <a className="btn-primary" style={{ display: "block", textAlign: "center", textDecoration: "none", marginBottom: 8 }}
-             href={qrFallback.url} target="_blank" rel="noreferrer">
-            Abrir nota fiscal oficial
-          </a>
-          <button className="btn-ghost" onClick={() => {
-            const target = qrFallback.target;
-            setQrFallback(null);
-            if (target === "receipt") { setExpenseDraft({ date: todayISO(), local: "", value: "" }); setShowAddExpense(true); }
-            else setShowAddItem(target);
-          }}>
-            Preencher manualmente agora
-          </button>
-        </ModalShell>
       )}
 
       {parsedModal && (
@@ -845,12 +762,11 @@ function ContatosScreen({ contacts, onAdd, onRemove }) {
   );
 }
 
-function ItensScreen({ title, items, hasCategory, onInc, onDec, onRemove, onAdd, onScanCamera, onScanUpload }) {
+function ItensScreen({ title, items, hasCategory, onInc, onDec, onRemove, onAdd, onScan }) {
   return (
     <>
       <div className="scan-row">
-        <button className="scan-btn" onClick={onScanCamera}><Camera size={20} /> Escanear QR Code da nota</button>
-        <button className="scan-btn" onClick={onScanUpload}><UploadCloud size={20} /> Enviar foto da nota</button>
+        <button className="scan-btn scan-btn-wide" onClick={onScan}><Camera size={20} /> Enviar foto da nota (leitura automática)</button>
       </div>
 
       <div className="section-title"><span className="tab-dot" /> Itens cadastrados ({items.length})</div>
@@ -891,7 +807,7 @@ function ItensScreen({ title, items, hasCategory, onInc, onDec, onRemove, onAdd,
   );
 }
 
-function GastosScreen({ viewMonth, setViewMonth, knownMonths, mIdx, monthExpenses, monthTotal, onAdd, onScanCamera, onScanUpload, onRemove }) {
+function GastosScreen({ viewMonth, setViewMonth, knownMonths, mIdx, monthExpenses, monthTotal, onAdd, onScan, onRemove }) {
   return (
     <>
       <div className="month-switch">
@@ -907,8 +823,7 @@ function GastosScreen({ viewMonth, setViewMonth, knownMonths, mIdx, monthExpense
       </div>
 
       <div className="scan-row">
-        <button className="scan-btn" onClick={onScanCamera}><Camera size={20} /> Escanear nota</button>
-        <button className="scan-btn" onClick={onScanUpload}><UploadCloud size={20} /> Enviar nota</button>
+        <button className="scan-btn scan-btn-wide" onClick={onScan}><Camera size={20} /> Enviar foto da nota (leitura automática)</button>
       </div>
 
       <div className="section-title"><span className="tab-dot" /> Notas do mês</div>
@@ -1017,84 +932,6 @@ function ExpenseModal({ draft, onClose, onSave }) {
       </div>
       <button className="btn-primary" disabled={!local || !value} onClick={() => onSave({ date, local, value })}>Salvar gasto</button>
     </ModalShell>
-  );
-}
-
-function CameraScannerModal({ target, onClose, onDetect }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef = useRef(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    function tick() {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (video && canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
-        if (code && code.data) {
-          onDetect(code.data);
-          return;
-        }
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    }
-
-    async function start() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-        });
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        tick();
-      } catch {
-        setError("Não foi possível acessar a câmera. Verifique se você autorizou o uso da câmera para este site nas configurações do navegador.");
-      }
-    }
-    start();
-
-    return () => {
-      cancelled = true;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
-    };
-  }, [onDetect]);
-
-  return (
-    <div className="camera-overlay">
-      <video ref={videoRef} playsInline muted className="camera-video" />
-      <canvas ref={canvasRef} style={{ display: "none" }} />
-      {!error && (
-        <>
-          <div className="camera-frame">
-            <span className="corner tl" /><span className="corner tr" />
-            <span className="corner bl" /><span className="corner br" />
-          </div>
-          <div className="camera-hint">Aponte a câmera para o QR Code da nota</div>
-        </>
-      )}
-      <button className="camera-close" onClick={onClose}><X size={22} /></button>
-      {error && (
-        <div className="camera-error">
-          <AlertTriangle size={26} />
-          <div>{error}</div>
-          <button className="btn-primary" style={{ marginTop: 10, maxWidth: 220 }} onClick={onClose}>Fechar e tentar de novo</button>
-        </div>
-      )}
-    </div>
   );
 }
 
