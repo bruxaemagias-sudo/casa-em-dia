@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createWorker } from "tesseract.js";
 import {
   Home, Phone, ShoppingBasket, Pill, Wallet, Plus, Minus, Trash2,
-  Camera, UploadCloud, MessageCircle, AlertTriangle, X, ChevronDown,
+  Camera, UploadCloud, MessageCircle, AlertTriangle, X, ChevronDown, Lock,
   Check, Users, CalendarDays, Sparkles, Loader2, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
@@ -354,6 +354,27 @@ const GlobalStyle = () => (
     .parsed-item .check.on { background: var(--sage); border-color: var(--sage); color: #fff; }
 
     .scanning-overlay { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 10px; color: var(--primary); }
+
+    .gate-shell { display: flex; flex-direction: column; min-height: 100vh; width: 100%; }
+    .gate-header { background: var(--primary); position: relative; overflow: hidden; padding: 44px 24px 54px; text-align: center; flex: none; }
+    .gate-badge { width: 62px; height: 62px; border-radius: 50%; border: 1.5px solid var(--clay); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; position: relative; }
+    .gate-badge::before { content: ''; position: absolute; inset: 6px; border: 1px solid rgba(230,223,201,0.5); border-radius: 50%; }
+    .gate-badge .dot-pill { width: 20px; height: 20px; background: var(--clay); transform: rotate(45deg); border-radius: 3px; }
+    .gate-eyebrow { color: #fff; font-family: 'Fraunces', serif; font-size: 21px; font-weight: 600; letter-spacing: 0.02em; }
+    .gate-tagline { color: rgba(255,255,255,0.75); font-size: 12.5px; margin-top: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .gate-divider { display: flex; justify-content: center; gap: 8px; margin-top: -18px; position: relative; z-index: 2; }
+    .gate-divider span { width: 9px; height: 9px; transform: rotate(45deg); border-radius: 2px; }
+    .gate-body { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 34px 26px; }
+    .gate-card { width: 100%; max-width: 320px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; padding: 26px 22px 24px; text-align: center; box-shadow: 0 18px 40px -18px rgba(31,65,96,0.35); margin-top: -10px; }
+    .gate-lock { width: 46px; height: 46px; border-radius: 14px; background: var(--primary-tint); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+    .gate-card h2 { font-family: 'Fraunces', serif; font-size: 18px; color: var(--ink); margin-bottom: 6px; font-weight: 600; }
+    .gate-card p { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 18px; line-height: 1.5; }
+    .gate-input { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1.5px solid var(--line); font-size: 15px; text-align: center; margin-bottom: 10px; font-family: inherit; background: var(--bg); color: var(--ink); }
+    .gate-input:focus { outline: none; border-color: var(--primary); background: var(--paper); }
+    .gate-input.error { border-color: var(--danger); }
+    .gate-error { color: var(--danger); font-size: 12px; margin-bottom: 10px; }
+    .gate-submit { width: 100%; padding: 13px; border-radius: 12px; border: none; background: var(--primary); color: #fff; font-weight: 700; font-size: 14.5px; cursor: pointer; }
+    .gate-footer { text-align: center; font-size: 11px; color: var(--ink-soft); margin-top: 20px; }
     .scan-btn-wide { flex: 1; }
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -984,38 +1005,37 @@ function PasswordGate({ onUnlock }) {
   return (
     <div className="lardia">
       <GlobalStyle />
-      <div className="phone-shell" style={{ alignItems: "center", justifyContent: "center", display: "flex", padding: "0 24px" }}>
-        <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 320, textAlign: "center" }}>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 600, color: "#1F4160", marginBottom: 6 }}>
-            ✦ Lar em Dia ✦
+      <div className="phone-shell">
+        <div className="gate-shell">
+          <div className="gate-header tile-pattern">
+            <div className="gate-badge"><span className="dot-pill" /></div>
+            <div className="gate-eyebrow">✦ Lar em Dia ✦</div>
+            <div className="gate-tagline">sua secretária do lar</div>
           </div>
-          <div style={{ fontSize: 13.5, color: "#5B6358", marginBottom: 18 }}>
-            Digite a senha de acesso para entrar no app.
+          <div className="gate-divider">
+            <span style={{ background: "var(--gold)" }} />
+            <span style={{ background: "var(--clay)" }} />
+            <span style={{ background: "var(--sage)" }} />
           </div>
-          <input
-            type="password"
-            value={value}
-            onChange={(e) => { setValue(e.target.value); setError(false); }}
-            placeholder="Senha de acesso"
-            autoFocus
-            style={{
-              width: "100%", padding: "13px 14px", borderRadius: 12,
-              border: error ? "1.5px solid #A23B3B" : "1.5px solid #E6DFC9",
-              fontSize: 15, marginBottom: 10, textAlign: "center",
-            }}
-          />
-          {error && (
-            <div style={{ color: "#A23B3B", fontSize: 12.5, marginBottom: 10 }}>
-              Senha incorreta. Confira com quem te passou o acesso.
-            </div>
-          )}
-          <button type="submit" style={{
-            width: "100%", padding: 13, borderRadius: 12, border: "none",
-            background: "#1F4160", color: "#fff", fontWeight: 700, fontSize: 14.5, cursor: "pointer",
-          }}>
-            Entrar
-          </button>
-        </form>
+          <div className="gate-body">
+            <form onSubmit={handleSubmit} className="gate-card">
+              <div className="gate-lock"><Lock size={22} /></div>
+              <h2>Acesso restrito</h2>
+              <p>Digite a senha que você recebeu para entrar no seu app.</p>
+              <input
+                type="password"
+                value={value}
+                onChange={(e) => { setValue(e.target.value); setError(false); }}
+                placeholder="Senha de acesso"
+                autoFocus
+                className={`gate-input ${error ? "error" : ""}`}
+              />
+              {error && <div className="gate-error">Senha incorreta. Confira com quem te passou o acesso.</div>}
+              <button type="submit" className="gate-submit">Entrar</button>
+              <div className="gate-footer">Acesso pessoal e intransferível</div>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );
