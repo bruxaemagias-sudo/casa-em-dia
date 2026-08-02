@@ -397,7 +397,11 @@ const SEED_PHARMACY = [
 
 /* --------------------------------- app ----------------------------------- */
 
-export default function LarEmDia() {
+// >>> TROQUE A SENHA AQUI antes de vender <<<
+// É só editar o texto entre aspas. Combine com quem comprar por e-mail/WhatsApp.
+const APP_PASSWORD = "LAREMDIA2026";
+
+function LarEmDiaApp() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState("home");
   const [toast, setToast] = useState(null);
@@ -959,4 +963,71 @@ function ParsedItemsModal({ data, onToggle, onClose, onConfirm }) {
       <button className="btn-ghost" onClick={onClose}>Cancelar</button>
     </ModalShell>
   );
+}
+
+/* ------------------------------ portão de senha ---------------------------- */
+
+function PasswordGate({ onUnlock }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState(false);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (value === APP_PASSWORD) {
+      try { localStorage.setItem("ldd:unlocked", "true"); } catch {}
+      onUnlock();
+    } else {
+      setError(true);
+    }
+  }
+
+  return (
+    <div className="lardia">
+      <GlobalStyle />
+      <div className="phone-shell" style={{ alignItems: "center", justifyContent: "center", display: "flex", padding: "0 24px" }}>
+        <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 320, textAlign: "center" }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 600, color: "#1F4160", marginBottom: 6 }}>
+            ✦ Lar em Dia ✦
+          </div>
+          <div style={{ fontSize: 13.5, color: "#5B6358", marginBottom: 18 }}>
+            Digite a senha de acesso para entrar no app.
+          </div>
+          <input
+            type="password"
+            value={value}
+            onChange={(e) => { setValue(e.target.value); setError(false); }}
+            placeholder="Senha de acesso"
+            autoFocus
+            style={{
+              width: "100%", padding: "13px 14px", borderRadius: 12,
+              border: error ? "1.5px solid #A23B3B" : "1.5px solid #E6DFC9",
+              fontSize: 15, marginBottom: 10, textAlign: "center",
+            }}
+          />
+          {error && (
+            <div style={{ color: "#A23B3B", fontSize: 12.5, marginBottom: 10 }}>
+              Senha incorreta. Confira com quem te passou o acesso.
+            </div>
+          )}
+          <button type="submit" style={{
+            width: "100%", padding: 13, borderRadius: 12, border: "none",
+            background: "#1F4160", color: "#fff", fontWeight: 700, fontSize: 14.5, cursor: "pointer",
+          }}>
+            Entrar
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default function LarEmDia() {
+  const [unlocked, setUnlocked] = useState(() => {
+    try { return localStorage.getItem("ldd:unlocked") === "true"; } catch { return false; }
+  });
+
+  if (!unlocked) {
+    return <PasswordGate onUnlock={() => setUnlocked(true)} />;
+  }
+  return <LarEmDiaApp />;
 }
