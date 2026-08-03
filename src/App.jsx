@@ -58,9 +58,52 @@ function getOcrWorker() {
   if (!ocrWorkerPromise) ocrWorkerPromise = createWorker("por");
   return ocrWorkerPromise;
 }
+
+// Deixa a imagem em preto e branco, com mais contraste, e aumenta o tamanho se estiver pequena —
+// isso melhora bastante o reconhecimento em notas de papel térmico, que costumam ter letra fina e desbotada.
+function preprocessImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não foi possível abrir a imagem"));
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Imagem inválida"));
+      img.onload = () => {
+        const minWidth = 1400;
+        const scale = img.width < minWidth ? minWidth / img.width : 1;
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          let v = (gray - 128) * 1.6 + 128;
+          v = Math.max(0, Math.min(255, v));
+          d[i] = d[i + 1] = d[i + 2] = v;
+        }
+        ctx.putImageData(imageData, 0, 0);
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Falha ao processar imagem"))), "image/png");
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 async function extractTextFromImage(file) {
   const worker = await getOcrWorker();
-  const { data } = await worker.recognize(file);
+  let input = file;
+  try {
+    input = await preprocessImage(file);
+  } catch {
+    input = file; // se o pré-processamento falhar, tenta com a imagem original
+  }
+  const { data } = await worker.recognize(input);
   return data.text || "";
 }
 
@@ -72,10 +115,20 @@ function parseReceiptText(rawText) {
   const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
   const date = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
 
+  // Todos os valores em formato de dinheiro encontrados no texto (ex: 12,90 / 1.234,50)
+  const allMoney = [...rawText.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}/g)]
+    .map((m) => parseFloat(m[0].replace(/\./g, "").replace(",", ".")))
+    .filter((n) => !isNaN(n) && n > 0);
+
   let total = null;
-  const totalMatches = [...rawText.matchAll(/TOTAL[^\d\n]{0,15}(\d{1,3}(?:\.\d{3})*,\d{2})/gi)];
+  // Tenta achar perto da palavra "TOTAL" primeiro (mais confiável quando funciona)
+  const totalMatches = [...rawText.matchAll(/TOTAL[^\d\n]{0,20}(\d{1,3}(?:\.\d{3})*,\d{2})/gi)];
   if (totalMatches.length) {
     total = parseFloat(totalMatches[totalMatches.length - 1][1].replace(/\./g, "").replace(",", "."));
+  } else if (allMoney.length) {
+    // Se o OCR não reconheceu bem a palavra "TOTAL", assume o maior valor da nota —
+    // quase sempre é o total, já que é a soma de todos os itens.
+    total = Math.max(...allMoney);
   }
 
   const local = lines.find((l) => l.length > 3 && !/^\d+$/.test(l) && !/^\d{2}\/\d{2}\/\d{4}/.test(l)) || null;
@@ -376,6 +429,7 @@ const GlobalStyle = () => (
     .gate-submit { width: 100%; padding: 13px; border-radius: 12px; border: none; background: var(--primary); color: #fff; font-weight: 700; font-size: 14.5px; cursor: pointer; }
     .gate-footer { text-align: center; font-size: 11px; color: var(--ink-soft); margin-top: 20px; }
     .scan-btn-wide { flex: 1; }
+    .scan-tip { font-size: 11px; color: var(--ink-soft); text-align: center; margin-top: 6px; padding: 0 8px; }
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -793,6 +847,7 @@ function ItensScreen({ title, items, hasCategory, onInc, onDec, onRemove, onAdd,
       <div className="scan-row">
         <button className="scan-btn scan-btn-wide" onClick={onScan}><Camera size={20} /> Enviar foto da nota (leitura automática)</button>
       </div>
+      <div className="scan-tip">💡 Foto de perto, com boa luz, sem sombra ou brilho em cima da letra — melhora bastante a leitura.</div>
 
       <div className="section-title"><span className="tab-dot" /> Itens cadastrados ({items.length})</div>
       {items.length === 0 && (
@@ -850,6 +905,7 @@ function GastosScreen({ viewMonth, setViewMonth, knownMonths, mIdx, monthExpense
       <div className="scan-row">
         <button className="scan-btn scan-btn-wide" onClick={onScan}><Camera size={20} /> Enviar foto da nota (leitura automática)</button>
       </div>
+      <div className="scan-tip">💡 Foto de perto, com boa luz, sem sombra ou brilho em cima da letra — melhora bastante a leitura.</div>
 
       <div className="section-title"><span className="tab-dot" /> Notas do mês</div>
       {monthExpenses.length === 0 && (
