@@ -128,12 +128,10 @@ function parseReceiptText(rawText) {
 
   const items = [];
   for (const line of lines) {
-    const m = line.match(/^(.{3,40}?)\s+(\d{1,3}(?:\.\d{3})*,\d{2})$/);
-    if (m) {
-      const desc = m[1].replace(/^\d+\s*(UN|KG|UNID|PC|CX)?\s*/i, "").trim();
-      if (desc.length > 2 && !/total|troco|dinheiro|cart[aã]o|desconto|subtotal/i.test(desc)) {
-        items.push({ name: desc, qty: 1, unit: "un", validade: randFutureDate(15, 220) });
-      }
+    // Tenta capturar qualquer linha que pareça um produto ou texto útil caso venha solto
+    const cleanLine = line.replace(/^\d+\s*(UN|KG|UNID|PC|CX)?\s*/i, "").trim();
+    if (cleanLine.length > 2 && !/total|troco|dinheiro|cart[aã]o|desconto|subtotal|cnpj|cpf|data|caixa|operador/i.test(cleanLine)) {
+      items.push({ name: cleanLine, qty: 1, unit: "un", validade: randFutureDate(30, 180) });
     }
   }
   return { date, total, local, items };
@@ -362,13 +360,6 @@ const SEED_CONTACTS = [
   { id: uid(), name: "Mariana (filha)", relation: "Filha", phone: "51999990001" },
   { id: uid(), name: "Roberto (marido)", relation: "Esposo", phone: "51999990002" },
 ];
-const SEED_GROCERIES = [
-  { id: uid(), name: "Arroz branco 5kg", category: "Alimentos", unit: "pct", qty: 1, validade: randFutureDate(120, 200) },
-  { id: uid(), name: "Leite integral 1L", category: "Alimentos", unit: "un", qty: 2, validade: randFutureDate(-2, 4) },
-];
-const SEED_PHARMACY = [
-  { id: uid(), name: "Dipirona 500mg", unit: "cx", qty: 1, validade: randFutureDate(180, 300) },
-];
 
 /* --------------------------------- app ----------------------------------- */
 
@@ -388,7 +379,6 @@ export default function LarEmDiaApp() {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [expenseDraft, setExpenseDraft] = useState(null);
   const [scanningFor, setScanningFor] = useState(null);
-  const [parsedModal, setParsedModal] = useState(null);
   
   // Estados para os formulários manuais de adição de itens
   const [manualName, setManualName] = useState("");
@@ -407,8 +397,8 @@ export default function LarEmDiaApp() {
         loadKey("ldd:expenses", null),
       ]);
       setContacts(c ?? SEED_CONTACTS);
-      setGroceries(g ?? SEED_GROCERIES);
-      setPharmacy(p ?? SEED_PHARMACY);
+      setGroceries(g ?? []);
+      setPharmacy(p ?? []);
       setExpenses(e ?? []);
       setReady(true);
     })();
@@ -441,16 +431,17 @@ export default function LarEmDiaApp() {
   async function handleFileSelected(e) {
     const file = e.target.files?.[0];
     const target = pendingScan.current;
-    e.target.value = ""; // Limpa para permitir re-selecionar a mesma foto se necessário
+    e.target.value = ""; 
     if (!file || !target) return;
 
     setScanningFor(target);
-    let text;
+    let text = "";
     try {
       text = await extractTextFromImage(file);
     } catch {
       setScanningFor(null);
-      showToast("Não foi possível ler o texto dessa foto. Tente uma imagem mais nítida.");
+      showToast("Erro ao ler a imagem. Adicione manualmente.");
+      setShowAddItem(target === "receipt" ? "grocery" : target);
       return;
     }
     setScanningFor(null);
@@ -463,12 +454,21 @@ export default function LarEmDiaApp() {
         value: data.total ? data.total.toFixed(2) : "",
       });
       setShowAddExpense(true);
-      if (!data.total) showToast("Não consegui identificar o valor sozinho — confira e complete");
-    } else if (data.items.length) {
-      setParsedModal({ target, items: data.items.map((i) => ({ ...i, selected: true })) });
     } else {
-      showToast("Não consegui identificar itens na foto — adicione manualmente");
-      setShowAddItem(target);
+      if (data.items.length > 0) {
+        // Se encontrou itens na foto, adiciona automaticamente
+        const newItems = data.items.map(i => ({ id: uid(), ...i }));
+        if (target === "grocery") setGroceries(l => [...newItems, ...l]);
+        if (target === "pharmacy") setPharmacy(l => [...newItems, ...l]);
+        showToast(`${newItems.length} item(ns) adicionado(s) da foto!`);
+      } else {
+        // Se a foto não puxou nada, abre o modal manual direto para facilitar
+        showToast("Não achamos itens legíveis na foto. Insira manualmente.");
+        setManualName("");
+        setManualQty("1");
+        setManualValidade(randFutureDate(30, 90));
+        setShowAddItem(target);
+      }
     }
   }
 
@@ -496,7 +496,6 @@ export default function LarEmDiaApp() {
       <div className="phone-shell">
         {toast && <div className="toast"><Check size={15} /> {toast}</div>}
 
-        {/* Input de arquivo invisível usado pelo OCR */}
         <input
           type="file"
           accept="image/*"
@@ -505,7 +504,6 @@ export default function LarEmDiaApp() {
           onChange={handleFileSelected}
         />
 
-        {/* Overlay de carregamento do OCR */}
         {scanningFor && (
           <div className="modal-overlay">
             <div className="modal-sheet" style={{ textAlign: "center", padding: "30px" }}>
@@ -575,24 +573,31 @@ export default function LarEmDiaApp() {
                 </button>
               </div>
               <div className="section-title"><span className="tab-dot" /> Itens na Despensa</div>
-              {groceries.map((item) => (
-                <div key={item.id} className="card item-row">
-                  <div className="item-info">
-                    <div className="item-name">{item.name}</div>
-                    <div className="item-meta">
-                      <span>Val: {fmtDateBR(item.validade)}</span>
-                    </div>
-                  </div>
-                  <div className="stepper">
-                    <button onClick={() => adjustQty(setGroceries, item.id, -1)}><Minus size={13} /></button>
-                    <span className="qty">{item.qty}</span>
-                    <button onClick={() => adjustQty(setGroceries, item.id, 1)}><Plus size={13} /></button>
-                  </div>
-                  <button className="icon-btn" onClick={() => removeItem(setGroceries, item.id)}>
-                    <Trash2 size={16} />
-                  </button>
+              {groceries.length === 0 ? (
+                <div className="empty-state card">
+                  <div className="display">Despensa vazia</div>
+                  <p style={{ fontSize: "13px" }}>Adicione itens manualmente ou escaneie uma foto.</p>
                 </div>
-              ))}
+              ) : (
+                groceries.map((item) => (
+                  <div key={item.id} className="card item-row">
+                    <div className="item-info">
+                      <div className="item-name">{item.name}</div>
+                      <div className="item-meta">
+                        <span>Val: {fmtDateBR(item.validade)}</span>
+                      </div>
+                    </div>
+                    <div className="stepper">
+                      <button onClick={() => adjustQty(setGroceries, item.id, -1)}><Minus size={13} /></button>
+                      <span className="qty">{item.qty}</span>
+                      <button onClick={() => adjustQty(setGroceries, item.id, 1)}><Plus size={13} /></button>
+                    </div>
+                    <button className="icon-btn" onClick={() => removeItem(setGroceries, item.id)}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
               <button className="fab-add" onClick={() => { setManualName(""); setManualQty("1"); setShowAddItem("grocery"); }}>
                 <Plus size={18} /> Adicionar Novo Item
               </button>
@@ -607,24 +612,31 @@ export default function LarEmDiaApp() {
                 </button>
               </div>
               <div className="section-title"><span className="tab-dot" /> Itens na Farmácia</div>
-              {pharmacy.map((item) => (
-                <div key={item.id} className="card item-row">
-                  <div className="item-info">
-                    <div className="item-name">{item.name}</div>
-                    <div className="item-meta">
-                      <span>Val: {fmtDateBR(item.validade)}</span>
-                    </div>
-                  </div>
-                  <div className="stepper">
-                    <button onClick={() => adjustQty(setPharmacy, item.id, -1)}><Minus size={13} /></button>
-                    <span className="qty">{item.qty}</span>
-                    <button onClick={() => adjustQty(setPharmacy, item.id, 1)}><Plus size={13} /></button>
-                  </div>
-                  <button className="icon-btn" onClick={() => removeItem(setPharmacy, item.id)}>
-                    <Trash2 size={16} />
-                  </button>
+              {pharmacy.length === 0 ? (
+                <div className="empty-state card">
+                  <div className="display">Farmácia vazia</div>
+                  <p style={{ fontSize: "13px" }}>Adicione remédios manualmente ou por foto.</p>
                 </div>
-              ))}
+              ) : (
+                pharmacy.map((item) => (
+                  <div key={item.id} className="card item-row">
+                    <div className="item-info">
+                      <div className="item-name">{item.name}</div>
+                      <div className="item-meta">
+                        <span>Val: {fmtDateBR(item.validade)}</span>
+                      </div>
+                    </div>
+                    <div className="stepper">
+                      <button onClick={() => adjustQty(setPharmacy, item.id, -1)}><Minus size={13} /></button>
+                      <span className="qty">{item.qty}</span>
+                      <button onClick={() => adjustQty(setPharmacy, item.id, 1)}><Plus size={13} /></button>
+                    </div>
+                    <button className="icon-btn" onClick={() => removeItem(setPharmacy, item.id)}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
               <button className="fab-add" onClick={() => { setManualName(""); setManualQty("1"); setShowAddItem("pharmacy"); }}>
                 <Plus size={18} /> Adicionar Remédio/Item
               </button>
