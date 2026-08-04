@@ -52,8 +52,11 @@ const STATUS_META = {
 
 /* --------------------- leitura automática por foto (OCR) ----------------- */
 let ocrWorkerPromise = null;
-function getOcrWorker() {
-  if (!ocrWorkerPromise) ocrWorkerPromise = createWorker("por");
+async function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    const worker = await createWorker("por");
+    ocrWorkerPromise = worker;
+  }
   return ocrWorkerPromise;
 }
 
@@ -262,11 +265,6 @@ const GlobalStyle = () => (
     .alert-title { font-weight: 700; font-size: 14px; }
     .alert-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 1px; }
 
-    .badge {
-      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px;
-      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-    }
-
     .empty-state {
       text-align: center; padding: 40px 20px; color: var(--ink-soft);
     }
@@ -288,17 +286,7 @@ const GlobalStyle = () => (
     .contact-row:last-child { border-bottom: none; }
     .avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--primary-tint); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: 'Fraunces', serif; flex: none; }
     .wa-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; background: #25D366; color: #fff; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; text-decoration:none; }
-    .wa-btn:active { transform: scale(0.94); }
 
-    .fab {
-      position: absolute; right: 18px; bottom: 92px;
-      width: 54px; height: 54px; border-radius: 50%;
-      background: #25D366; color: #fff; border: none;
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 8px 20px rgba(37,211,102,0.4);
-      cursor: pointer; z-index: 20;
-      text-decoration: none;
-    }
     .fab-add {
       position: sticky; bottom: 0; margin-top: 14px;
       width: 100%; padding: 13px; border-radius: 14px; border: none;
@@ -396,11 +384,17 @@ export default function LarEmDiaApp() {
   const [viewMonth, setViewMonth] = useState(monthKey(todayISO()));
 
   const [showAddContact, setShowAddContact] = useState(false);
-  const [showAddItem, setShowAddItem] = useState(null);
+  const [showAddItem, setShowAddItem] = useState(null); // 'grocery' | 'pharmacy'
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [expenseDraft, setExpenseDraft] = useState(null);
   const [scanningFor, setScanningFor] = useState(null);
   const [parsedModal, setParsedModal] = useState(null);
+  
+  // Estados para os formulários manuais de adição de itens
+  const [manualName, setManualName] = useState("");
+  const [manualQty, setManualQty] = useState("1");
+  const [manualValidade, setManualValidade] = useState(randFutureDate(30, 90));
+
   const fileInputRef = useRef(null);
   const pendingScan = useRef(null);
 
@@ -447,7 +441,7 @@ export default function LarEmDiaApp() {
   async function handleFileSelected(e) {
     const file = e.target.files?.[0];
     const target = pendingScan.current;
-    e.target.value = "";
+    e.target.value = ""; // Limpa para permitir re-selecionar a mesma foto se necessário
     if (!file || !target) return;
 
     setScanningFor(target);
@@ -473,7 +467,7 @@ export default function LarEmDiaApp() {
     } else if (data.items.length) {
       setParsedModal({ target, items: data.items.map((i) => ({ ...i, selected: true })) });
     } else {
-      showToast("Não consegui identificar itens na foto — tente uma imagem mais nítida ou adicione manualmente");
+      showToast("Não consegui identificar itens na foto — adicione manualmente");
       setShowAddItem(target);
     }
   }
@@ -502,6 +496,7 @@ export default function LarEmDiaApp() {
       <div className="phone-shell">
         {toast && <div className="toast"><Check size={15} /> {toast}</div>}
 
+        {/* Input de arquivo invisível usado pelo OCR */}
         <input
           type="file"
           accept="image/*"
@@ -509,6 +504,17 @@ export default function LarEmDiaApp() {
           style={{ display: "none" }}
           onChange={handleFileSelected}
         />
+
+        {/* Overlay de carregamento do OCR */}
+        {scanningFor && (
+          <div className="modal-overlay">
+            <div className="modal-sheet" style={{ textAlign: "center", padding: "30px" }}>
+              <Loader2 className="spin" size={32} color="#1F4160" style={{ margin: "0 auto 12px" }} />
+              <div style={{ fontWeight: "700", fontSize: "16px" }}>Lendo imagem com OCR...</div>
+              <div style={{ fontSize: "13px", color: "var(--ink-soft)", marginTop: "4px" }}>Aguarde um instante.</div>
+            </div>
+          </div>
+        )}
 
         <div className="header tile-pattern">
           <div className="eyebrow"><Sparkles size={13} /> Lar em Dia</div>
@@ -528,7 +534,7 @@ export default function LarEmDiaApp() {
           {tab === "home" && (
             <div>
               <div className="card" style={{ background: "var(--primary-tint)", border: "none" }}>
-                <div style={{ fontWeight: "700", color: "var(--primary)", marginBottom: "4px" }}>Ações Rápidas OCR</div>
+                <div style={{ fontWeight: "700", color: "var(--primary)", marginBottom: "8px" }}>Ações Rápidas OCR</div>
                 <div className="scan-row">
                   <button className="scan-btn" onClick={() => openScanner("grocery")}>
                     <Camera size={18} /> Escanear Despensa
@@ -587,8 +593,40 @@ export default function LarEmDiaApp() {
                   </button>
                 </div>
               ))}
-              <button className="fab-add" onClick={() => setShowAddItem("grocery")}>
+              <button className="fab-add" onClick={() => { setManualName(""); setManualQty("1"); setShowAddItem("grocery"); }}>
                 <Plus size={18} /> Adicionar Novo Item
+              </button>
+            </div>
+          )}
+
+          {tab === "farmacia" && (
+            <div>
+              <div className="scan-row" style={{ marginBottom: "14px" }}>
+                <button className="scan-btn" onClick={() => openScanner("pharmacy")}>
+                  <Camera size={18} /> Ler Nota para Farmácia
+                </button>
+              </div>
+              <div className="section-title"><span className="tab-dot" /> Itens na Farmácia</div>
+              {pharmacy.map((item) => (
+                <div key={item.id} className="card item-row">
+                  <div className="item-info">
+                    <div className="item-name">{item.name}</div>
+                    <div className="item-meta">
+                      <span>Val: {fmtDateBR(item.validade)}</span>
+                    </div>
+                  </div>
+                  <div className="stepper">
+                    <button onClick={() => adjustQty(setPharmacy, item.id, -1)}><Minus size={13} /></button>
+                    <span className="qty">{item.qty}</span>
+                    <button onClick={() => adjustQty(setPharmacy, item.id, 1)}><Plus size={13} /></button>
+                  </div>
+                  <button className="icon-btn" onClick={() => removeItem(setPharmacy, item.id)}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+              <button className="fab-add" onClick={() => { setManualName(""); setManualQty("1"); setShowAddItem("pharmacy"); }}>
+                <Plus size={18} /> Adicionar Remédio/Item
               </button>
             </div>
           )}
@@ -647,6 +685,68 @@ export default function LarEmDiaApp() {
             </div>
           )}
         </div>
+
+        {/* Modal para Adicionar Item Manualmente (Despensa ou Farmácia) */}
+        {showAddItem && (
+          <div className="modal-overlay" onClick={() => setShowAddItem(null)}>
+            <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>Adicionar em {showAddItem === "grocery" ? "Despensa" : "Farmácia"}</h3>
+                <button className="icon-btn" onClick={() => setShowAddItem(null)}><X size={18} /></button>
+              </div>
+              <div className="field">
+                <label>Nome do Item</label>
+                <input
+                  type="text"
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                  placeholder="Ex: Arroz, Leite, Dipirona..."
+                />
+              </div>
+              <div className="field">
+                <label>Quantidade</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={manualQty}
+                  onChange={(e) => setManualQty(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Validade</label>
+                <input
+                  type="date"
+                  value={manualValidade}
+                  onChange={(e) => setManualValidade(e.target.value)}
+                />
+              </div>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  if (!manualName.trim()) {
+                    showToast("Digite o nome do item");
+                    return;
+                  }
+                  const newItem = {
+                    id: uid(),
+                    name: manualName.trim(),
+                    qty: parseInt(manualQty) || 1,
+                    validade: manualValidade || todayISO(),
+                  };
+                  if (showAddItem === "grocery") {
+                    setGroceries((list) => [newItem, ...list]);
+                  } else {
+                    setPharmacy((list) => [newItem, ...list]);
+                  }
+                  setShowAddItem(null);
+                  showToast("Item adicionado com sucesso!");
+                }}
+              >
+                Salvar Item
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Modal de Despesa Manual / OCR */}
         {showAddExpense && expenseDraft && (
