@@ -7,8 +7,8 @@ import {
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
-/*  LAR EM DIA — secretária do lar                                         */
-/*  Paleta "azulejo de cozinha": marinho, terracota, sálvia e marfim       */
+/*  LAR EM DIA — secretária do lar                                        */
+/*  Paleta "azulejo de cozinha": marinho, terracota, sálvia e marfim        */
 /* ---------------------------------------------------------------------- */
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -51,16 +51,12 @@ const STATUS_META = {
 };
 
 /* --------------------- leitura automática por foto (OCR) ----------------- */
-// Extrai o texto de uma foto da nota fiscal usando OCR (Tesseract), 100% no navegador.
-// Não depende de nenhum site externo — por isso não é bloqueado pela Sefaz.
 let ocrWorkerPromise = null;
 function getOcrWorker() {
   if (!ocrWorkerPromise) ocrWorkerPromise = createWorker("por");
   return ocrWorkerPromise;
 }
 
-// Deixa a imagem em preto e branco, com mais contraste, e aumenta o tamanho se estiver pequena —
-// isso melhora bastante o reconhecimento em notas de papel térmico, que costumam ter letra fina e desbotada.
 function preprocessImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -101,33 +97,27 @@ async function extractTextFromImage(file) {
   try {
     input = await preprocessImage(file);
   } catch {
-    input = file; // se o pré-processamento falhar, tenta com a imagem original
+    input = file;
   }
   const { data } = await worker.recognize(input);
   return data.text || "";
 }
 
-// Interpreta o texto bruto do OCR e tenta identificar itens, valor total, data e loja.
-// É uma leitura "melhor esforço": sempre mostramos o resultado pra pessoa conferir/editar antes de salvar.
 function parseReceiptText(rawText) {
   const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
   const date = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null;
 
-  // Todos os valores em formato de dinheiro encontrados no texto (ex: 12,90 / 1.234,50)
   const allMoney = [...rawText.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}/g)]
     .map((m) => parseFloat(m[0].replace(/\./g, "").replace(",", ".")))
     .filter((n) => !isNaN(n) && n > 0);
 
   let total = null;
-  // Tenta achar perto da palavra "TOTAL" primeiro (mais confiável quando funciona)
   const totalMatches = [...rawText.matchAll(/TOTAL[^\d\n]{0,20}(\d{1,3}(?:\.\d{3})*,\d{2})/gi)];
   if (totalMatches.length) {
     total = parseFloat(totalMatches[totalMatches.length - 1][1].replace(/\./g, "").replace(",", "."));
   } else if (allMoney.length) {
-    // Se o OCR não reconheceu bem a palavra "TOTAL", assume o maior valor da nota —
-    // quase sempre é o total, já que é a soma de todos os itens.
     total = Math.max(...allMoney);
   }
 
@@ -154,45 +144,10 @@ function waLink(phone, text) {
   return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
 
-const GROCERY_POOL = [
-  { name: "Arroz branco 5kg", category: "Alimentos", unit: "pct" },
-  { name: "Feijão carioca 1kg", category: "Alimentos", unit: "pct" },
-  { name: "Óleo de soja 900ml", category: "Alimentos", unit: "un" },
-  { name: "Café em pó 500g", category: "Alimentos", unit: "pct" },
-  { name: "Açúcar refinado 1kg", category: "Alimentos", unit: "pct" },
-  { name: "Macarrão espaguete", category: "Alimentos", unit: "pct" },
-  { name: "Leite integral 1L", category: "Alimentos", unit: "un" },
-  { name: "Farinha de trigo 1kg", category: "Alimentos", unit: "pct" },
-  { name: "Sabão em pó", category: "Limpeza", unit: "cx" },
-  { name: "Detergente neutro", category: "Limpeza", unit: "un" },
-  { name: "Água sanitária", category: "Limpeza", unit: "un" },
-  { name: "Papel higiênico 12un", category: "Limpeza", unit: "pct" },
-];
-const PHARMACY_POOL = [
-  { name: "Dipirona 500mg", unit: "cx" },
-  { name: "Paracetamol 750mg", unit: "cx" },
-  { name: "Omeprazol 20mg", unit: "cx" },
-  { name: "Losartana 50mg", unit: "cx" },
-  { name: "Vitamina D", unit: "fr" },
-  { name: "Soro fisiológico", unit: "un" },
-  { name: "Curativo adesivo", unit: "cx" },
-  { name: "Álcool em gel 70%", unit: "un" },
-];
-const STORE_POOL = [
-  "Supermercado Extra", "Mercado Bom Preço", "Farmácia São João",
-  "Hortifruti da Esquina", "Atacadão", "Farmácia Pague Menos", "Padaria Pão Dourado",
-];
-
 function randFutureDate(minD, maxD) {
   const d = new Date();
   d.setDate(d.getDate() + Math.floor(minD + Math.random() * (maxD - minD)));
   return d.toISOString().slice(0, 10);
-}
-function pick(arr, n) {
-  const copy = [...arr];
-  const out = [];
-  while (out.length < n && copy.length) out.push(copy.splice(Math.floor(Math.random() * copy.length), 1)[0]);
-  return out;
 }
 
 /* ------------------------------- estilo -------------------------------- */
@@ -387,51 +342,8 @@ const GlobalStyle = () => (
     .field label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
     .field input, .field select { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1.5px solid var(--line); font-size: 14.5px; font-family: inherit; background: var(--paper); color: var(--ink); }
     .field input:focus, .field select:focus { outline: none; border-color: var(--primary); }
-    .field-row { display: flex; gap: 10px; }
-    .field-row .field { flex: 1; }
     .btn-primary { width: 100%; padding: 13px; border-radius: 12px; border: none; background: var(--primary); color: #fff; font-weight: 700; font-size: 14.5px; cursor: pointer; }
     .btn-ghost { width: 100%; padding: 12px; border-radius: 12px; border: none; background: transparent; color: var(--ink-soft); font-weight: 700; font-size: 13.5px; cursor: pointer; margin-top: 6px; }
-
-    .month-switch { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 4px; }
-    .month-switch button { border: none; background: var(--primary-tint); color: var(--primary); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    .month-switch button:disabled { opacity: 0.35; cursor: default; }
-    .total-card { background: var(--primary); color: #fff; border-radius: 18px; padding: 20px; text-align: center; margin-bottom: 16px; }
-    .total-card .amount { font-family: 'Fraunces', serif; font-size: 32px; font-weight: 600; margin-top: 4px; }
-    .receipt-row { display: flex; align-items: center; justify-content: space-between; }
-    .receipt-local { font-weight: 700; font-size: 14px; }
-    .receipt-date { font-size: 12px; color: var(--ink-soft); }
-    .receipt-value { font-family: 'Fraunces', serif; font-weight: 600; font-size: 16px; color: var(--primary); }
-
-    .parsed-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; }
-    .parsed-item .check { width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; cursor: pointer; }
-    .parsed-item .check.on { background: var(--sage); border-color: var(--sage); color: #fff; }
-
-    .scanning-overlay { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 10px; color: var(--primary); }
-
-    .gate-shell { display: flex; flex-direction: column; min-height: 100vh; width: 100%; }
-    .gate-header { background: var(--primary); position: relative; overflow: hidden; padding: 44px 24px 54px; text-align: center; flex: none; }
-    .gate-badge { width: 62px; height: 62px; border-radius: 50%; border: 1.5px solid var(--clay); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; position: relative; }
-    .gate-badge::before { content: ''; position: absolute; inset: 6px; border: 1px solid rgba(230,223,201,0.5); border-radius: 50%; }
-    .gate-badge .dot-pill { width: 20px; height: 20px; background: var(--clay); transform: rotate(45deg); border-radius: 3px; }
-    .gate-eyebrow { color: #fff; font-family: 'Fraunces', serif; font-size: 21px; font-weight: 600; letter-spacing: 0.02em; }
-    .gate-tagline { color: rgba(255,255,255,0.75); font-size: 12.5px; margin-top: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
-    .gate-divider { display: flex; justify-content: center; gap: 8px; margin-top: -18px; position: relative; z-index: 2; }
-    .gate-divider span { width: 9px; height: 9px; transform: rotate(45deg); border-radius: 2px; }
-    .gate-body { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 34px 26px; }
-    .gate-card { width: 100%; max-width: 320px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; padding: 26px 22px 24px; text-align: center; box-shadow: 0 18px 40px -18px rgba(31,65,96,0.35); margin-top: -10px; }
-    .gate-lock { width: 46px; height: 46px; border-radius: 14px; background: var(--primary-tint); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
-    .gate-card h2 { font-family: 'Fraunces', serif; font-size: 18px; color: var(--ink); margin-bottom: 6px; font-weight: 600; }
-    .gate-card p { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 18px; line-height: 1.5; }
-    .gate-input { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1.5px solid var(--line); font-size: 15px; text-align: center; margin-bottom: 10px; font-family: inherit; background: var(--bg); color: var(--ink); }
-    .gate-input:focus { outline: none; border-color: var(--primary); background: var(--paper); }
-    .gate-input.error { border-color: var(--danger); }
-    .gate-error { color: var(--danger); font-size: 12px; margin-bottom: 10px; }
-    .gate-submit { width: 100%; padding: 13px; border-radius: 12px; border: none; background: var(--primary); color: #fff; font-weight: 700; font-size: 14.5px; cursor: pointer; }
-    .gate-footer { text-align: center; font-size: 11px; color: var(--ink-soft); margin-top: 20px; }
-    .scan-btn-wide { flex: 1; }
-    .scan-tip { font-size: 11px; color: var(--ink-soft); text-align: center; margin-top: 6px; padding: 0 8px; }
-    .spin { animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
 
     .toast {
       position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
@@ -439,6 +351,8 @@ const GlobalStyle = () => (
       font-size: 13px; font-weight: 600; z-index: 200; box-shadow: 0 8px 20px rgba(0,0,0,0.25);
       display: flex; align-items: center; gap: 8px;
     }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   `}</style>
 );
 
@@ -463,20 +377,14 @@ const SEED_CONTACTS = [
 const SEED_GROCERIES = [
   { id: uid(), name: "Arroz branco 5kg", category: "Alimentos", unit: "pct", qty: 1, validade: randFutureDate(120, 200) },
   { id: uid(), name: "Leite integral 1L", category: "Alimentos", unit: "un", qty: 2, validade: randFutureDate(-2, 4) },
-  { id: uid(), name: "Detergente neutro", category: "Limpeza", unit: "un", qty: 0, validade: randFutureDate(200, 300) },
 ];
 const SEED_PHARMACY = [
   { id: uid(), name: "Dipirona 500mg", unit: "cx", qty: 1, validade: randFutureDate(180, 300) },
-  { id: uid(), name: "Omeprazol 20mg", unit: "cx", qty: 0, validade: randFutureDate(200, 260) },
 ];
 
 /* --------------------------------- app ----------------------------------- */
 
-// >>> TROQUE A SENHA AQUI antes de vender <<<
-// É só editar o texto entre aspas. Combine com quem comprar por e-mail/WhatsApp.
-const APP_PASSWORD = "LAREMDIA2026";
-
-function LarEmDiaApp() {
+export default function LarEmDiaApp() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState("home");
   const [toast, setToast] = useState(null);
@@ -488,13 +396,13 @@ function LarEmDiaApp() {
   const [viewMonth, setViewMonth] = useState(monthKey(todayISO()));
 
   const [showAddContact, setShowAddContact] = useState(false);
-  const [showAddItem, setShowAddItem] = useState(null); // 'grocery' | 'pharmacy'
+  const [showAddItem, setShowAddItem] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [expenseDraft, setExpenseDraft] = useState(null);
   const [scanningFor, setScanningFor] = useState(null);
-  const [parsedModal, setParsedModal] = useState(null); // { target, items }
+  const [parsedModal, setParsedModal] = useState(null);
   const fileInputRef = useRef(null);
-  const pendingScan = useRef(null); // 'grocery' | 'pharmacy' | 'receipt'
+  const pendingScan = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -522,15 +430,11 @@ function LarEmDiaApp() {
     setTimeout(() => setToast(null), 2600);
   }, []);
 
-  /* ---------- ações mercadoria / farmácia ---------- */
   function adjustQty(listSetter, id, delta) {
     listSetter((list) => list.map((it) => (it.id === id ? { ...it, qty: Math.max(0, it.qty + delta) } : it)));
   }
   function removeItem(listSetter, id) {
     listSetter((list) => list.filter((it) => it.id !== id));
-  }
-  function addItem(listSetter, item) {
-    listSetter((list) => [{ id: uid(), ...item }, ...list]);
   }
 
   function openScanner(target) {
@@ -574,40 +478,12 @@ function LarEmDiaApp() {
     }
   }
 
-  function confirmParsedItems() {
-    const { target, items } = parsedModal;
-    const toAdd = items.filter((i) => i.selected);
-    const setter = target === "grocery" ? setGroceries : setPharmacy;
-    setter((list) => [...toAdd.map((i) => ({ id: uid(), ...i })), ...list]);
-    setParsedModal(null);
-    showToast(`Foto processada — ${toAdd.length} ${toAdd.length === 1 ? "item adicionado" : "itens adicionados"}. Confira as quantidades!`);
-  }
-
-  function saveExpense(draft) {
-    setExpenses((list) => [{ id: uid(), date: draft.date, local: draft.local, value: parseFloat(draft.value) || 0 }, ...list]);
-    setShowAddExpense(false);
-    setExpenseDraft(null);
-    showToast("Gasto registrado");
-  }
-
-  /* ---------- alertas home ---------- */
   const allAlerts = [...groceries.map((i) => ({ ...i, origin: "Despensa" })), ...pharmacy.map((i) => ({ ...i, origin: "Farmácia" }))]
     .map((i) => ({ ...i, status: itemStatus(i) }))
-    .filter((i) => i.status !== "ok")
-    .sort((a, b) => {
-      const order = { vencido: 0, falta: 1, vencendo: 2, baixo: 3 };
-      return order[a.status] - order[b.status];
-    });
+    .filter((i) => i.status !== "ok");
 
-  const currentMK = monthKey(todayISO());
   const monthExpenses = expenses.filter((e) => monthKey(e.date) === viewMonth);
   const monthTotal = monthExpenses.reduce((s, e) => s + e.value, 0);
-  const knownMonths = Array.from(new Set([currentMK, ...expenses.map((e) => monthKey(e.date))])).sort();
-  const mIdx = knownMonths.indexOf(viewMonth);
-
-  const shareText = allAlerts.length
-    ? "Lista para repor em casa:\n" + allAlerts.map((a) => `• ${a.name} (${STATUS_META[a.status].label.toLowerCase()})`).join("\n")
-    : "Está tudo em dia em casa por enquanto! 🏡";
 
   if (!ready) {
     return (
@@ -624,8 +500,15 @@ function LarEmDiaApp() {
     <div className="lardia">
       <GlobalStyle />
       <div className="phone-shell">
-
         {toast && <div className="toast"><Check size={15} /> {toast}</div>}
+
+        <input
+          type="file"
+          accept="image/*"
+          ref={fileInputRef}
+          style={{ display: "none" }}
+          onChange={handleFileSelected}
+        />
 
         <div className="header tile-pattern">
           <div className="eyebrow"><Sparkles size={13} /> Lar em Dia</div>
@@ -643,467 +526,191 @@ function LarEmDiaApp() {
 
         <div className="scroll-area">
           {tab === "home" && (
-            <HomeScreen alerts={allAlerts} monthTotal={monthTotal} />
-          )}
-          {tab === "contatos" && (
-            <ContatosScreen
-              contacts={contacts}
-              onAdd={() => setShowAddContact(true)}
-              onRemove={(id) => setContacts((l) => l.filter((c) => c.id !== id))}
-            />
-          )}
-          {tab === "mercadoria" && (
-            <ItensScreen
-              title="Despensa"
-              items={groceries}
-              hasCategory
-              onInc={(id) => adjustQty(setGroceries, id, 1)}
-              onDec={(id) => adjustQty(setGroceries, id, -1)}
-              onRemove={(id) => removeItem(setGroceries, id)}
-              onAdd={() => setShowAddItem("grocery")}
-              onScan={() => openScanner("grocery")}
-            />
-          )}
-          {tab === "farmacia" && (
-            <ItensScreen
-              title="Farmácia"
-              items={pharmacy}
-              hasCategory={false}
-              onInc={(id) => adjustQty(setPharmacy, id, 1)}
-              onDec={(id) => adjustQty(setPharmacy, id, -1)}
-              onRemove={(id) => removeItem(setPharmacy, id)}
-              onAdd={() => setShowAddItem("pharmacy")}
-              onScan={() => openScanner("pharmacy")}
-            />
-          )}
-          {tab === "gastos" && (
-            <GastosScreen
-              viewMonth={viewMonth}
-              setViewMonth={setViewMonth}
-              knownMonths={knownMonths}
-              mIdx={mIdx}
-              monthExpenses={monthExpenses}
-              monthTotal={monthTotal}
-              onAdd={() => { setExpenseDraft({ date: todayISO(), local: "", value: "" }); setShowAddExpense(true); }}
-              onScan={() => openScanner("receipt")}
-              onRemove={(id) => setExpenses((l) => l.filter((e) => e.id !== id))}
-            />
-          )}
-        </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: "none" }}
-          onChange={handleFileSelected}
-        />
-
-        <a className="fab" href={waLink("", shareText)} target="_blank" rel="noreferrer" title="Compartilhar no WhatsApp">
-          <MessageCircle size={24} />
-        </a>
-
-        <nav className="bottom-nav">
-          <NavBtn icon={<Home size={19} />} label="Início" active={tab === "home"} onClick={() => setTab("home")} />
-          <NavBtn icon={<Users size={19} />} label="Contatos" active={tab === "contatos"} onClick={() => setTab("contatos")} />
-          <NavBtn icon={<ShoppingBasket size={19} />} label="Despensa" active={tab === "mercadoria"} onClick={() => setTab("mercadoria")} />
-          <NavBtn icon={<Pill size={19} />} label="Farmácia" active={tab === "farmacia"} onClick={() => setTab("farmacia")} />
-          <NavBtn icon={<Wallet size={19} />} label="Gastos" active={tab === "gastos"} onClick={() => setTab("gastos")} />
-        </nav>
-      </div>
-
-      {showAddContact && (
-        <ContactModal onClose={() => setShowAddContact(false)} onSave={(c) => { setContacts((l) => [{ id: uid(), ...c }, ...l]); setShowAddContact(false); }} />
-      )}
-
-      {showAddItem && (
-        <ItemModal
-          target={showAddItem}
-          onClose={() => setShowAddItem(null)}
-          onSave={(item) => {
-            addItem(showAddItem === "grocery" ? setGroceries : setPharmacy, item);
-            setShowAddItem(null);
-            showToast("Item adicionado");
-          }}
-        />
-      )}
-
-      {showAddExpense && (
-        <ExpenseModal
-          draft={expenseDraft}
-          onClose={() => { setShowAddExpense(false); setExpenseDraft(null); }}
-          onSave={saveExpense}
-        />
-      )}
-
-      {scanningFor && (
-        <div className="modal-overlay">
-          <div className="modal-sheet">
-            <div className="scanning-overlay">
-              <Loader2 className="spin" size={30} />
-              <div style={{ fontWeight: 700 }}>Lendo a foto da nota…</div>
-              <div style={{ fontSize: 12.5, color: "var(--ink-soft)", textAlign: "center" }}>
-                Reconhecendo o texto da imagem (OCR). Pode levar alguns segundos.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {parsedModal && (
-        <ParsedItemsModal
-          data={parsedModal}
-          onToggle={(idx) => setParsedModal((pm) => ({ ...pm, items: pm.items.map((it, i) => i === idx ? { ...it, selected: !it.selected } : it) }))}
-          onClose={() => setParsedModal(null)}
-          onConfirm={confirmParsedItems}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------- pedaços --------------------------------- */
-
-function NavBtn({ icon, label, active, onClick }) {
-  return (
-    <button className={`nav-btn ${active ? "active" : ""}`} onClick={onClick}>
-      <span className="dot-pill">{icon}</span>
-      {label}
-    </button>
-  );
-}
-
-function HomeScreen({ alerts, monthTotal }) {
-  return (
-    <>
-      <div className="section-title"><span className="tab-dot" /> Avisos de hoje</div>
-      {alerts.length === 0 && (
-        <div className="card empty-state">
-          <div className="display">Tudo em dia! 🏡</div>
-          Nenhum item em falta, com estoque baixo ou vencendo.
-        </div>
-      )}
-      {alerts.map((a) => {
-        const meta = STATUS_META[a.status];
-        return (
-          <div key={a.id} className="card alert-card">
-            <div className="alert-icon" style={{ background: meta.bg, color: meta.color }}>
-              <AlertTriangle size={16} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="alert-title">{a.name}</div>
-              <div className="alert-sub">{a.origin} · {a.validade ? `validade ${fmtDateBR(a.validade)}` : `quantidade ${a.qty}`}</div>
-            </div>
-            <span className="badge" style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
-          </div>
-        );
-      })}
-
-      <div className="section-title" style={{ marginTop: 26 }}><span className="tab-dot" /> Resumo do mês</div>
-      <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div style={{ fontSize: 12.5, color: "var(--ink-soft)", fontWeight: 700, textTransform: "uppercase" }}>Gasto acumulado</div>
-          <div className="display" style={{ fontSize: 24, marginTop: 2 }}>{fmtMoney(monthTotal)}</div>
-        </div>
-        <Wallet size={26} color="var(--primary)" />
-      </div>
-    </>
-  );
-}
-
-function ContatosScreen({ contacts, onAdd, onRemove }) {
-  return (
-    <>
-      <div className="section-title"><span className="tab-dot" /> Contatos de emergência</div>
-      <div className="card" style={{ padding: "4px 14px" }}>
-        {contacts.length === 0 && (
-          <div className="empty-state">
-            <div className="display">Nenhum contato ainda</div>
-            Adicione familiares para falar com um toque.
-          </div>
-        )}
-        {contacts.map((c) => (
-          <div key={c.id} className="contact-row">
-            <div className="avatar">{c.name.trim()[0]?.toUpperCase() || "?"}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="item-name">{c.name}</div>
-              <div className="item-meta">{c.relation} · {c.phone}</div>
-            </div>
-            <a className="wa-btn" href={waLink(c.phone, `Oi ${c.name.split(" ")[0]}, tudo bem?`)} target="_blank" rel="noreferrer">
-              <MessageCircle size={18} />
-            </a>
-            <button className="icon-btn" onClick={() => onRemove(c.id)}><Trash2 size={17} /></button>
-          </div>
-        ))}
-      </div>
-      <button className="fab-add" onClick={onAdd}><Plus size={18} /> Adicionar contato</button>
-    </>
-  );
-}
-
-function ItensScreen({ title, items, hasCategory, onInc, onDec, onRemove, onAdd, onScan }) {
-  return (
-    <>
-      <div className="scan-row">
-        <button className="scan-btn scan-btn-wide" onClick={onScan}><Camera size={20} /> Enviar foto da nota (leitura automática)</button>
-      </div>
-      <div className="scan-tip">💡 Foto de perto, com boa luz, sem sombra ou brilho em cima da letra — melhora bastante a leitura.</div>
-
-      <div className="section-title"><span className="tab-dot" /> Itens cadastrados ({items.length})</div>
-      {items.length === 0 && (
-        <div className="card empty-state">
-          <div className="display">Nada por aqui ainda</div>
-          Use o + ou escaneie uma nota para começar.
-        </div>
-      )}
-      {items.map((it) => {
-        const status = itemStatus(it);
-        const meta = STATUS_META[status];
-        return (
-          <div key={it.id} className="card">
-            <div className="item-row">
-              <div className="item-info">
-                <div className="item-name">{it.name}</div>
-                <div className="item-meta">
-                  {hasCategory && <span>{it.category}</span>}
-                  {it.validade && <span><CalendarDays size={11} style={{ verticalAlign: -1 }} /> {fmtDateBR(it.validade)}</span>}
+            <div>
+              <div className="card" style={{ background: "var(--primary-tint)", border: "none" }}>
+                <div style={{ fontWeight: "700", color: "var(--primary)", marginBottom: "4px" }}>Ações Rápidas OCR</div>
+                <div className="scan-row">
+                  <button className="scan-btn" onClick={() => openScanner("grocery")}>
+                    <Camera size={18} /> Escanear Despensa
+                  </button>
+                  <button className="scan-btn" onClick={() => openScanner("receipt")}>
+                    <UploadCloud size={18} /> Nota para Gastos
+                  </button>
                 </div>
               </div>
-              <button className="icon-btn" onClick={() => onRemove(it.id)}><Trash2 size={16} /></button>
+
+              <div className="section-title"><span className="tab-dot" /> Alertas da Casa ({allAlerts.length})</div>
+              {allAlerts.length === 0 ? (
+                <div className="empty-state card">
+                  <div className="display">Tudo em dia!</div>
+                  <p style={{ fontSize: "13px" }}>Nenhum item vencendo ou em falta no momento.</p>
+                </div>
+              ) : (
+                allAlerts.map((item) => (
+                  <div key={item.id} className="card alert-card" style={{ background: STATUS_META[item.status].bg }}>
+                    <div className="alert-icon" style={{ background: STATUS_META[item.status].color, color: "#fff" }}>
+                      <AlertTriangle size={16} />
+                    </div>
+                    <div>
+                      <div className="alert-title">{item.name}</div>
+                      <div className="alert-sub">Origem: {item.origin} — {STATUS_META[item.status].label}</div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-              <span className="badge" style={{ background: meta.bg, color: meta.color }}>{meta.label}</span>
-              <div className="stepper">
-                <button onClick={() => onDec(it.id)}><Minus size={14} /></button>
-                <span className="qty">{it.qty} {it.unit}</span>
-                <button onClick={() => onInc(it.id)}><Plus size={14} /></button>
+          )}
+
+          {tab === "mercadoria" && (
+            <div>
+              <div className="scan-row" style={{ marginBottom: "14px" }}>
+                <button className="scan-btn" onClick={() => openScanner("grocery")}>
+                  <Camera size={18} /> Ler Nota para Despensa
+                </button>
               </div>
+              <div className="section-title"><span className="tab-dot" /> Itens na Despensa</div>
+              {groceries.map((item) => (
+                <div key={item.id} className="card item-row">
+                  <div className="item-info">
+                    <div className="item-name">{item.name}</div>
+                    <div className="item-meta">
+                      <span>Val: {fmtDateBR(item.validade)}</span>
+                    </div>
+                  </div>
+                  <div className="stepper">
+                    <button onClick={() => adjustQty(setGroceries, item.id, -1)}><Minus size={13} /></button>
+                    <span className="qty">{item.qty}</span>
+                    <button onClick={() => adjustQty(setGroceries, item.id, 1)}><Plus size={13} /></button>
+                  </div>
+                  <button className="icon-btn" onClick={() => removeItem(setGroceries, item.id)}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+              <button className="fab-add" onClick={() => setShowAddItem("grocery")}>
+                <Plus size={18} /> Adicionar Novo Item
+              </button>
             </div>
-          </div>
-        );
-      })}
-      <button className="fab-add" onClick={onAdd}><Plus size={18} /> Adicionar item</button>
-    </>
-  );
-}
+          )}
 
-function GastosScreen({ viewMonth, setViewMonth, knownMonths, mIdx, monthExpenses, monthTotal, onAdd, onScan, onRemove }) {
-  return (
-    <>
-      <div className="month-switch">
-        <button disabled={mIdx <= 0} onClick={() => setViewMonth(knownMonths[mIdx - 1])}><ChevronLeft size={16} /></button>
-        <div style={{ fontWeight: 700, fontSize: 14, textTransform: "capitalize" }}>{monthLabel(viewMonth)}</div>
-        <button disabled={mIdx >= knownMonths.length - 1} onClick={() => setViewMonth(knownMonths[mIdx + 1])}><ChevronRight size={16} /></button>
-      </div>
+          {tab === "gastos" && (
+            <div>
+              <div className="card" style={{ background: "var(--primary)", color: "#fff", textAlign: "center", padding: "20px" }}>
+                <div style={{ fontSize: "12px", opacity: 0.8, textTransform: "uppercase" }}>Total do Mês</div>
+                <div className="display" style={{ fontSize: "32px", marginTop: "4px" }}>{fmtMoney(monthTotal)}</div>
+              </div>
+              <div className="scan-row" style={{ marginBottom: "14px" }}>
+                <button className="scan-btn" onClick={() => openScanner("receipt")}>
+                  <Camera size={18} /> Escanear Nota Fiscal de Gastos
+                </button>
+              </div>
+              <div className="section-title"><span className="tab-dot" /> Histórico de Gastos</div>
+              {monthExpenses.length === 0 ? (
+                <div className="empty-state card">
+                  <div className="display">Nenhum gasto registrado</div>
+                  <p style={{ fontSize: "13px" }}>Use o botão acima para escanear uma nota ou adicione manualmente.</p>
+                </div>
+              ) : (
+                monthExpenses.map((exp) => (
+                  <div key={exp.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: "700" }}>{exp.local || "Estabelecimento"}</div>
+                      <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>{fmtDateBR(exp.date)}</div>
+                    </div>
+                    <div className="display" style={{ fontWeight: "600", color: "var(--primary)" }}>{fmtMoney(exp.value)}</div>
+                  </div>
+                ))
+              )}
+              <button className="fab-add" onClick={() => { setExpenseDraft({ date: todayISO(), local: "", value: "" }); setShowAddExpense(true); }}>
+                <Plus size={18} /> Adicionar Gasto Manual
+              </button>
+            </div>
+          )}
 
-      <div className="total-card">
-        <div style={{ fontSize: 12.5, opacity: 0.85, fontWeight: 700, textTransform: "uppercase" }}>Total do mês</div>
-        <div className="amount">{fmtMoney(monthTotal)}</div>
-        <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>{monthExpenses.length} nota(s) registrada(s)</div>
-      </div>
-
-      <div className="scan-row">
-        <button className="scan-btn scan-btn-wide" onClick={onScan}><Camera size={20} /> Enviar foto da nota (leitura automática)</button>
-      </div>
-      <div className="scan-tip">💡 Foto de perto, com boa luz, sem sombra ou brilho em cima da letra — melhora bastante a leitura.</div>
-
-      <div className="section-title"><span className="tab-dot" /> Notas do mês</div>
-      {monthExpenses.length === 0 && (
-        <div className="card empty-state">
-          <div className="display">Nenhum gasto neste mês</div>
-          Adicione manualmente ou escaneie uma nota fiscal.
+          {tab === "contatos" && (
+            <div>
+              <div className="section-title"><span className="tab-dot" /> Lista de Familiares</div>
+              {contacts.map((c) => (
+                <div key={c.id} className="card contact-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <div className="avatar">{c.name.charAt(0)}</div>
+                    <div>
+                      <div style={{ fontWeight: "700" }}>{c.name}</div>
+                      <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>{c.relation}</div>
+                    </div>
+                  </div>
+                  <a className="wa-btn" href={waLink(c.phone, "Olá!")} target="_blank" rel="noreferrer">
+                    <MessageCircle size={18} />
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-      {monthExpenses.map((e) => (
-        <div key={e.id} className="card receipt-row">
-          <div>
-            <div className="receipt-local">{e.local}</div>
-            <div className="receipt-date">{fmtDateBR(e.date)}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="receipt-value">{fmtMoney(e.value)}</div>
-            <button className="icon-btn" onClick={() => onRemove(e.id)}><Trash2 size={15} /></button>
-          </div>
-        </div>
-      ))}
-      <button className="fab-add" onClick={onAdd}><Plus size={18} /> Adicionar gasto</button>
-    </>
-  );
-}
 
-/* -------------------------------- modais ---------------------------------- */
-
-function ModalShell({ title, onClose, children }) {
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3 className="display">{title}</h3>
-          <button className="icon-btn" onClick={onClose}><X size={20} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ContactModal({ onClose, onSave }) {
-  const [name, setName] = useState("");
-  const [relation, setRelation] = useState("Filho(a)");
-  const [phone, setPhone] = useState("");
-  return (
-    <ModalShell title="Novo contato" onClose={onClose}>
-      <div className="field"><label>Nome</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Ana Paula" /></div>
-      <div className="field-row">
-        <div className="field">
-          <label>Relação</label>
-          <select value={relation} onChange={(e) => setRelation(e.target.value)}>
-            {["Filho(a)", "Esposo(a)", "Mãe", "Pai", "Neto(a)", "Vizinho(a)", "Outro"].map((r) => <option key={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="field"><label>WhatsApp</label><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(51) 99999-0000" /></div>
-      </div>
-      <button className="btn-primary" disabled={!name || !phone} onClick={() => onSave({ name, relation, phone })}>Salvar contato</button>
-    </ModalShell>
-  );
-}
-
-function ItemModal({ target, onClose, onSave }) {
-  const isGrocery = target === "grocery";
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("Alimentos");
-  const [qty, setQty] = useState(1);
-  const [unit, setUnit] = useState("un");
-  const [validade, setValidade] = useState("");
-  return (
-    <ModalShell title={isGrocery ? "Novo item da despensa" : "Novo medicamento"} onClose={onClose}>
-      <div className="field"><label>Nome</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder={isGrocery ? "Ex: Arroz branco 5kg" : "Ex: Dipirona 500mg"} /></div>
-      <div className="field-row">
-        {isGrocery && (
-          <div className="field">
-            <label>Categoria</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option>Alimentos</option><option>Limpeza</option><option>Outros</option>
-            </select>
+        {/* Modal de Despesa Manual / OCR */}
+        {showAddExpense && expenseDraft && (
+          <div className="modal-overlay" onClick={() => setShowAddExpense(false)}>
+            <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>Registrar Gasto</h3>
+                <button className="icon-btn" onClick={() => setShowAddExpense(false)}><X size={18} /></button>
+              </div>
+              <div className="field">
+                <label>Estabelecimento / Local</label>
+                <input
+                  type="text"
+                  value={expenseDraft.local}
+                  onChange={(e) => setExpenseDraft({ ...expenseDraft, local: e.target.value })}
+                  placeholder="Ex: Supermercado"
+                />
+              </div>
+              <div className="field">
+                <label>Valor Total (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={expenseDraft.value}
+                  onChange={(e) => setExpenseDraft({ ...expenseDraft, value: e.target.value })}
+                  placeholder="0,00"
+                />
+              </div>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  setExpenses((list) => [{ id: uid(), date: expenseDraft.date, local: expenseDraft.local, value: parseFloat(expenseDraft.value) || 0 }, ...list]);
+                  setShowAddExpense(false);
+                  setExpenseDraft(null);
+                  showToast("Gasto registrado com sucesso!");
+                }}
+              >
+                Salvar Gasto
+              </button>
+            </div>
           </div>
         )}
-        <div className="field"><label>Unidade</label><input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="un / pct / cx" /></div>
-      </div>
-      <div className="field-row">
-        <div className="field"><label>Quantidade</label><input type="number" min="0" value={qty} onChange={(e) => setQty(Number(e.target.value))} /></div>
-        <div className="field"><label>Validade</label><input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} /></div>
-      </div>
-      <button className="btn-primary" disabled={!name} onClick={() => onSave({ name, category, unit, qty, validade })}>
-        {isGrocery ? "Adicionar à despensa" : "Adicionar à farmácia"}
-      </button>
-    </ModalShell>
-  );
-}
 
-function ExpenseModal({ draft, onClose, onSave }) {
-  const [date, setDate] = useState(draft?.date || todayISO());
-  const [local, setLocal] = useState(draft?.local || "");
-  const [value, setValue] = useState(draft?.value || "");
-  return (
-    <ModalShell title="Registrar gasto" onClose={onClose}>
-      <div className="field"><label>Estabelecimento</label><input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="Ex: Supermercado Extra" /></div>
-      <div className="field-row">
-        <div className="field"><label>Data</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div className="field"><label>Valor (R$)</label><input type="number" step="0.01" min="0" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0,00" /></div>
-      </div>
-      <button className="btn-primary" disabled={!local || !value} onClick={() => onSave({ date, local, value })}>Salvar gasto</button>
-    </ModalShell>
-  );
-}
-
-function ParsedItemsModal({ data, onToggle, onClose, onConfirm }) {
-  const { target, items } = data;
-  return (
-    <ModalShell title={target === "grocery" ? "Itens encontrados na nota" : "Medicamentos encontrados"} onClose={onClose}>
-      <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginBottom: 12 }}>
-        Confira os itens identificados antes de adicionar à {target === "grocery" ? "despensa" : "farmácia"}.
-      </div>
-      {items.map((it, idx) => (
-        <div key={idx} className="parsed-item">
-          <div className={`check ${it.selected ? "on" : ""}`} onClick={() => onToggle(idx)}>
-            {it.selected && <Check size={13} />}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{it.name}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-soft)" }}>
-              {it.qty} {it.unit} · validade {fmtDateBR(it.validade)}
-            </div>
-          </div>
+        {/* Navegação Inferior */}
+        <div className="bottom-nav">
+          <button className={`nav-btn ${tab === "home" ? "active" : ""}`} onClick={() => setTab("home")}>
+            <div className="dot-pill"><Home size={18} /></div>
+            Início
+          </button>
+          <button className={`nav-btn ${tab === "mercadoria" ? "active" : ""}`} onClick={() => setTab("mercadoria")}>
+            <div className="dot-pill"><ShoppingBasket size={18} /></div>
+            Despensa
+          </button>
+          <button className={`nav-btn ${tab === "gastos" ? "active" : ""}`} onClick={() => setTab("gastos")}>
+            <div className="dot-pill"><Wallet size={18} /></div>
+            Gastos
+          </button>
+          <button className={`nav-btn ${tab === "contatos" ? "active" : ""}`} onClick={() => setTab("contatos")}>
+            <div className="dot-pill"><Users size={18} /></div>
+            Contatos
+          </button>
         </div>
-      ))}
-      <button className="btn-primary" onClick={onConfirm}>Adicionar itens selecionados</button>
-      <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-    </ModalShell>
-  );
-}
 
-/* ------------------------------ portão de senha ---------------------------- */
-
-function PasswordGate({ onUnlock }) {
-  const [value, setValue] = useState("");
-  const [error, setError] = useState(false);
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (value === APP_PASSWORD) {
-      try { localStorage.setItem("ldd:unlocked", "true"); } catch {}
-      onUnlock();
-    } else {
-      setError(true);
-    }
-  }
-
-  return (
-    <div className="lardia">
-      <GlobalStyle />
-      <div className="phone-shell">
-        <div className="gate-shell">
-          <div className="gate-header tile-pattern">
-            <div className="gate-badge"><span className="dot-pill" /></div>
-            <div className="gate-eyebrow">✦ Lar em Dia ✦</div>
-            <div className="gate-tagline">sua secretária do lar</div>
-          </div>
-          <div className="gate-divider">
-            <span style={{ background: "var(--gold)" }} />
-            <span style={{ background: "var(--clay)" }} />
-            <span style={{ background: "var(--sage)" }} />
-          </div>
-          <div className="gate-body">
-            <form onSubmit={handleSubmit} className="gate-card">
-              <div className="gate-lock"><Lock size={22} /></div>
-              <h2>Acesso restrito</h2>
-              <p>Digite a senha que você recebeu para entrar no seu app.</p>
-              <input
-                type="password"
-                value={value}
-                onChange={(e) => { setValue(e.target.value); setError(false); }}
-                placeholder="Senha de acesso"
-                autoFocus
-                className={`gate-input ${error ? "error" : ""}`}
-              />
-              {error && <div className="gate-error">Senha incorreta. Confira com quem te passou o acesso.</div>}
-              <button type="submit" className="gate-submit">Entrar</button>
-              <div className="gate-footer">Acesso pessoal e intransferível</div>
-            </form>
-          </div>
-        </div>
       </div>
     </div>
   );
-}
-
-export default function LarEmDia() {
-  const [unlocked, setUnlocked] = useState(() => {
-    try { return localStorage.getItem("ldd:unlocked") === "true"; } catch { return false; }
-  });
-
-  if (!unlocked) {
-    return <PasswordGate onUnlock={() => setUnlocked(true)} />;
-  }
-  return <LarEmDiaApp />;
 }
