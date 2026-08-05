@@ -128,7 +128,6 @@ function parseReceiptText(rawText) {
 
   const items = [];
   for (const line of lines) {
-    // Tenta capturar qualquer linha que pareça um produto ou texto útil caso venha solto
     const cleanLine = line.replace(/^\d+\s*(UN|KG|UNID|PC|CX)?\s*/i, "").trim();
     if (cleanLine.length > 2 && !/total|troco|dinheiro|cart[aã]o|desconto|subtotal|cnpj|cpf|data|caixa|operador/i.test(cleanLine)) {
       items.push({ name: cleanLine, qty: 1, unit: "un", validade: randFutureDate(30, 180) });
@@ -280,10 +279,11 @@ const GlobalStyle = () => (
     .icon-btn { border: none; background: transparent; color: var(--ink-soft); cursor: pointer; padding: 6px; border-radius: 8px; display: flex; }
     .icon-btn:hover { background: var(--bg); color: var(--danger); }
 
-    .contact-row { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
-    .contact-row:last-child { border-bottom: none; }
+    .contact-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; background: var(--paper); }
     .avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--primary-tint); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: 'Fraunces', serif; flex: none; }
-    .wa-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; background: #25D366; color: #fff; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; text-decoration:none; }
+    .contact-actions { display: flex; align-items: center; gap: 8px; }
+    .wa-btn { width: 38px; height: 38px; border-radius: 50%; background: #25D366; color: #fff; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; text-decoration: none; box-shadow: 0 2px 5px rgba(37,211,102,0.3); }
+    .wa-btn:active { transform: scale(0.92); }
 
     .fab-add {
       position: sticky; bottom: 0; margin-top: 14px;
@@ -357,8 +357,8 @@ async function saveKey(key, value) {
 }
 
 const SEED_CONTACTS = [
-  { id: uid(), name: "Mariana (filha)", relation: "Filha", phone: "51999990001" },
-  { id: uid(), name: "Roberto (marido)", relation: "Esposo", phone: "51999990002" },
+  { id: uid(), name: "Mariana", relation: "Filha", phone: "51999990001" },
+  { id: uid(), name: "Roberto", relation: "Esposo", phone: "51999990002" },
 ];
 
 /* --------------------------------- app ----------------------------------- */
@@ -375,12 +375,17 @@ export default function LarEmDiaApp() {
   const [viewMonth, setViewMonth] = useState(monthKey(todayISO()));
 
   const [showAddContact, setShowAddContact] = useState(false);
-  const [showAddItem, setShowAddItem] = useState(null); // 'grocery' | 'pharmacy'
+  const [showAddItem, setShowAddItem] = useState(null); 
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [expenseDraft, setExpenseDraft] = useState(null);
   const [scanningFor, setScanningFor] = useState(null);
   
-  // Estados para os formulários manuais de adição de itens
+  // Estados para formulário de contato
+  const [contactName, setContactName] = useState("");
+  const [contactRelation, setContactRelation] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+
+  // Estados para formulários manuais de itens
   const [manualName, setManualName] = useState("");
   const [manualQty, setManualQty] = useState("1");
   const [manualValidade, setManualValidade] = useState(randFutureDate(30, 90));
@@ -456,13 +461,11 @@ export default function LarEmDiaApp() {
       setShowAddExpense(true);
     } else {
       if (data.items.length > 0) {
-        // Se encontrou itens na foto, adiciona automaticamente
         const newItems = data.items.map(i => ({ id: uid(), ...i }));
         if (target === "grocery") setGroceries(l => [...newItems, ...l]);
         if (target === "pharmacy") setPharmacy(l => [...newItems, ...l]);
         showToast(`${newItems.length} item(ns) adicionado(s) da foto!`);
       } else {
-        // Se a foto não puxou nada, abre o modal manual direto para facilitar
         showToast("Não achamos itens legíveis na foto. Insira manualmente.");
         setManualName("");
         setManualQty("1");
@@ -508,7 +511,7 @@ export default function LarEmDiaApp() {
           <div className="modal-overlay">
             <div className="modal-sheet" style={{ textAlign: "center", padding: "30px" }}>
               <Loader2 className="spin" size={32} color="#1F4160" style={{ margin: "0 auto 12px" }} />
-              <div style={{ fontWeight: "700", fontSize: "16px" }}>Lendo imagem com OCR...</div>
+              <div style={{ fontWeight: "700", fontSize: "16px" }}>Lendo imagem...</div>
               <div style={{ fontSize: "13px", color: "var(--ink-soft)", marginTop: "4px" }}>Aguarde um instante.</div>
             </div>
           </div>
@@ -532,7 +535,7 @@ export default function LarEmDiaApp() {
           {tab === "home" && (
             <div>
               <div className="card" style={{ background: "var(--primary-tint)", border: "none" }}>
-                <div style={{ fontWeight: "700", color: "var(--primary)", marginBottom: "8px" }}>Ações Rápidas OCR</div>
+                <div style={{ fontWeight: "700", color: "var(--primary)", marginBottom: "8px" }}>Ações Rápidas</div>
                 <div className="scan-row">
                   <button className="scan-btn" onClick={() => openScanner("grocery")}>
                     <Camera size={18} /> Escanear Despensa
@@ -679,24 +682,98 @@ export default function LarEmDiaApp() {
 
           {tab === "contatos" && (
             <div>
-              <div className="section-title"><span className="tab-dot" /> Lista de Familiares</div>
-              {contacts.map((c) => (
-                <div key={c.id} className="card contact-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div className="avatar">{c.name.charAt(0)}</div>
-                    <div>
-                      <div style={{ fontWeight: "700" }}>{c.name}</div>
-                      <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>{c.relation}</div>
+              <div className="section-title"><span className="tab-dot" /> Lista de Contatos</div>
+              {contacts.length === 0 ? (
+                <div className="empty-state card">
+                  <div className="display">Nenhum contato</div>
+                  <p style={{ fontSize: "13px" }}>Adicione familiares ou profissionais úteis.</p>
+                </div>
+              ) : (
+                contacts.map((c) => (
+                  <div key={c.id} className="contact-row">
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1 }}>
+                      <div className="avatar">{(c.name || "C").charAt(0)}</div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: "700", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+                        <div style={{ fontSize: "12px", color: "var(--ink-soft)" }}>{c.relation} • {c.phone}</div>
+                      </div>
+                    </div>
+                    <div className="contact-actions">
+                      <a className="wa-btn" href={waLink(c.phone, "Olá!")} target="_blank" rel="noreferrer" title="Enviar WhatsApp">
+                        <MessageCircle size={18} />
+                      </a>
+                      <button className="icon-btn" onClick={() => removeItem(setContacts, c.id)} title="Remover Contato">
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </div>
-                  <a className="wa-btn" href={waLink(c.phone, "Olá!")} target="_blank" rel="noreferrer">
-                    <MessageCircle size={18} />
-                  </a>
-                </div>
-              ))}
+                ))
+              )}
+              <button className="fab-add" onClick={() => { setContactName(""); setContactRelation(""); setContactPhone(""); setShowAddContact(true); }}>
+                <Plus size={18} /> Adicionar Novo Contato
+              </button>
             </div>
           )}
         </div>
+
+        {/* Modal para Adicionar Contato */}
+        {showAddContact && (
+          <div className="modal-overlay" onClick={() => setShowAddContact(false)}>
+            <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>Novo Contato</h3>
+                <button className="icon-btn" onClick={() => setShowAddContact(false)}><X size={18} /></button>
+              </div>
+              <div className="field">
+                <label>Nome</label>
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="Ex: Maria"
+                />
+              </div>
+              <div className="field">
+                <label>Parentesco / Função</label>
+                <input
+                  type="text"
+                  value={contactRelation}
+                  onChange={(e) => setContactRelation(e.target.value)}
+                  placeholder="Ex: Filha, Encanador, Farmácia..."
+                />
+              </div>
+              <div className="field">
+                <label>Telefone / WhatsApp (com DDD)</label>
+                <input
+                  type="text"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  placeholder="Ex: 51999998888"
+                />
+              </div>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  if (!contactName.trim() || !contactPhone.trim()) {
+                    showToast("Preencha o nome e o telefone");
+                    return;
+                  }
+                  const newContact = {
+                    id: uid(),
+                    name: contactName.trim(),
+                    relation: contactRelation.trim() || "Contato",
+                    phone: contactPhone.trim(),
+                  };
+                  setContacts((list) => [newContact, ...list]);
+                  setShowAddContact(false);
+                  showToast("Contato salvo com sucesso!");
+                }}
+              >
+                Salvar Contato
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Modal para Adicionar Item Manualmente (Despensa ou Farmácia) */}
         {showAddItem && (
